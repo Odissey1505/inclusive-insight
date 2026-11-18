@@ -1,25 +1,71 @@
 import { describe, it, expect } from 'vitest';
-import { looksLikeSecretKey, normalizeSupabaseUrl, cloudConfig } from '../cloud/config';
+import { looksLikeSecretKey, normalizeSupabaseUrl, parseCloudConfig } from '../cloud/config';
 import { SPEC_BY_LOCAL, toRemote, fromRemote, sameContent, stableUuid } from '../cloud/tables';
 
 const b64 = (o: object) => Buffer.from(JSON.stringify(o)).toString('base64url');
+// Placeholder values only — never real project data in tests.
+const URL_OK = 'https://example-project.supabase.co';
+const KEY_OK = 'sb_publishable_test_placeholder_key';
+const ANON_JWT = `${b64({ alg: 'HS256' })}.${b64({ role: 'anon' })}.sig`;
+const SERVICE_JWT = `${b64({ alg: 'HS256' })}.${b64({ role: 'service_role' })}.sig`;
 
 describe('cloud configuration', () => {
   it('refuses secret and service_role keys, accepts publishable/anon keys', () => {
     expect(looksLikeSecretKey('sb_secret_abc123')).toBe(true);
-    expect(looksLikeSecretKey(`${b64({ alg: 'HS256' })}.${b64({ role: 'service_role' })}.sig`)).toBe(true);
-    expect(looksLikeSecretKey(`${b64({ alg: 'HS256' })}.${b64({ role: 'anon' })}.sig`)).toBe(false);
+    expect(looksLikeSecretKey(SERVICE_JWT)).toBe(true);
+    expect(looksLikeSecretKey(ANON_JWT)).toBe(false);
     expect(looksLikeSecretKey('sb_publishable_abc123')).toBe(false);
   });
+
   it('normalizes the project URL copied with /rest/v1/', () => {
     expect(normalizeSupabaseUrl('https://abc.supabase.co/rest/v1/')).toBe('https://abc.supabase.co');
     expect(normalizeSupabaseUrl(' https://abc.supabase.co/ ')).toBe('https://abc.supabase.co');
     expect(normalizeSupabaseUrl('https://abc.supabase.co/auth/v1')).toBe('https://abc.supabase.co');
+    expect(normalizeSupabaseUrl(undefined)).toBe('');
   });
-  it('the committed project configuration is valid', () => {
-    expect(cloudConfig.problem).toBeNull();
-    expect(cloudConfig.enabled).toBe(true);
-    expect(cloudConfig.url).toMatch(/^https:\/\/[a-z0-9]+\.supabase\.co$/);
+
+  it('valid configuration → cloud mode', () => {
+    const c = parseCloudConfig({ VITE_SUPABASE_URL: URL_OK + '/rest/v1/', VITE_SUPABASE_PUBLISHABLE_KEY: KEY_OK });
+    expect(c).toEqual({ url: URL_OK, key: KEY_OK, enabled: true, configured: true, problem: null });
+  });
+
+  it('legacy anon key is accepted as a fallback variable', () => {
+    const c = parseCloudConfig({ VITE_SUPABASE_URL: URL_OK, VITE_SUPABASE_ANON_KEY: ANON_JWT });
+    expect(c.enabled).toBe(true);
+    expect(c.key).toBe(ANON_JWT);
+  });
+
+  it('no configuration → local mode without an error', () => {
+    for (const env of [{}, { VITE_SUPABASE_URL: '', VITE_SUPABASE_PUBLISHABLE_KEY: '' }, { VITE_SUPABASE_URL: '  ' }]) {
+      const c = parseCloudConfig(env);
+      expect(c.enabled).toBe(false);
+      expect(c.configured).toBe(false);
+      expect(c.problem).toBeNull();
+    }
+  });
+
+  it('incomplete or invalid configuration → local mode with a readable problem', () => {
+    const onlyUrl = parseCloudConfig({ VITE_SUPABASE_URL: URL_OK });
+    expect(onlyUrl.enabled).toBe(false);
+    expect(onlyUrl.problem).toMatch(/лише одну/);
+    const onlyKey = parseCloudConfig({ VITE_SUPABASE_PUBLISHABLE_KEY: KEY_OK });
+    expect(onlyKey.enabled).toBe(false);
+    expect(onlyKey.problem).toMatch(/лише одну/);
+    const badUrl = parseCloudConfig({ VITE_SUPABASE_URL: 'http://example-project.supabase.co', VITE_SUPABASE_PUBLISHABLE_KEY: KEY_OK });
+    expect(badUrl.enabled).toBe(false);
+    expect(badUrl.problem).toMatch(/https/);
+  });
+
+  it('a secret key never enables the cloud', () => {
+    for (const key of ['sb_secret_abcdefghijklmnop', SERVICE_JWT]) {
+      const c = parseCloudConfig({ VITE_SUPABASE_URL: URL_OK, VITE_SUPABASE_PUBLISHABLE_KEY: key });
+      expect(c.enabled).toBe(false);
+      expect(c.problem).toMatch(/секретний/);
+    }
+  });
+
+  it('localhost is allowed for development', () => {
+    expect(parseCloudConfig({ VITE_SUPABASE_URL: 'http://localhost:54321', VITE_SUPABASE_PUBLISHABLE_KEY: KEY_OK }).enabled).toBe(true);
   });
 });
 

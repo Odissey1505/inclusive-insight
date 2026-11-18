@@ -26,7 +26,22 @@ export function normalizeSupabaseUrl(raw: string | undefined): string {
   return (raw ?? '').trim().replace(/\/+$/, '').replace(/\/(rest|auth)\/v1$/i, '').replace(/\/+$/, '');
 }
 
-function read() {
+export interface CloudConfig {
+  url: string;
+  key: string;
+  /** true only for a complete, valid, non-secret configuration */
+  enabled: boolean;
+  /** at least one of the variables was provided */
+  configured: boolean;
+  /** human-readable reason why a provided configuration was rejected */
+  problem: string | null;
+}
+
+/**
+ * Pure parser: same input → same result, no dependency on the machine it runs on.
+ * Tested with valid and missing configurations independently of the CI environment.
+ */
+export function parseCloudConfig(env: Record<string, string | undefined>): CloudConfig {
   const url = normalizeSupabaseUrl(env.VITE_SUPABASE_URL);
   const key = (env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY || '').trim();
   let problem: string | null = null;
@@ -38,7 +53,8 @@ function read() {
   return { url, key, enabled, configured: !!(url || key), problem };
 }
 
-export const cloudConfig = read();
+/** Configuration of this build (from .env / CI variables via Vite). Without it the app runs in local mode. */
+export const cloudConfig: CloudConfig = parseCloudConfig(env);
 
 /** Address of the app itself (used for auth e-mail redirects). Works under any GitHub Pages sub-path. */
 export function appBaseUrl(): string {

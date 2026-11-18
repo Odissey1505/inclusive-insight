@@ -56,19 +56,22 @@ Supabase Dashboard → **Authentication**.
 
 ---
 
-## 3. URL і publishable key — уже в проєкті
+## 3. Передайте URL і publishable key у збірку
 
-Значення записано у файл `.env` у корені репозиторію (його комітять разом із кодом):
+Потрібні дві змінні: `VITE_SUPABASE_URL` (`https://<project-ref>.supabase.co`, без `/rest/v1/`) і `VITE_SUPABASE_PUBLISHABLE_KEY` (`sb_publishable_…`). Їх можна передати двома способами.
 
-```
-VITE_SUPABASE_URL=https://yhekszqxheljbxoucalt.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_…
-```
+**Рекомендовано: Variables репозиторію GitHub.** Settings → Secrets and variables → Actions → вкладка **Variables** → **New repository variable**. Створіть обидві змінні з точно такими назвами. Цей спосіб не залежить від прихованих файлів. Замість Variables можна використати **Secrets** з тими самими назвами: вони мають пріоритет.
 
-- URL вказується **без** `/rest/v1/`. Якщо його все ж скопіювати з цим суфіксом, додаток прибере суфікс сам.
-- Publishable key за задумом публічний: він лише вказує на проєкт, а дані захищає RLS. Тому його можна тримати в репозиторії, і GitHub Secrets не потрібні.
-- **Ніколи** не додавайте сюди **secret** (`sb_secret_…`) чи **service_role** ключ. Збірка таких ключів не прийме, а CI додатково перевіряє бандл (`scripts/check-bundle.mjs`).
-- Щоб тимчасово підключити інший проєкт, створіть `.env.local` (він не потрапляє в git) або додайте GitHub Secrets з тими самими назвами: вони мають пріоритет над `.env`.
+**Або файл `.env` у корені репозиторію** з тими самими двома рядками. Назва файлу починається з крапки, тож Finder і Провідник його приховують, і при завантаженні папки через веб-інтерфейс GitHub він часто не потрапляє в репозиторій. Перевірте, що `.env` видно у списку файлів на GitHub.
+
+Крок `Configure Supabase` у workflow виконується **до** тестів і збірки. Він обирає джерело в порядку Secrets → Variables → `.env` і пише в журнал лише режим і джерело, без значень:
+- `Supabase: CLOUD mode, configuration from repository variables (values hidden).` — усе гаразд;
+- попередження `Supabase not configured` — сайт збереться в **локальному режимі**; додайте Variables і перезапустіть workflow;
+- помилка `Secret Supabase key` — у змінній опинився secret- чи service_role-ключ; workflow зупиняється. Замініть його на publishable і відкличте секретний ключ у Supabase.
+
+Publishable key за задумом публічний: він лише вказує на проєкт, а дані захищає RLS. **Ніколи** не використовуйте **secret** (`sb_secret_…`) чи **service_role** ключ. Його відхиляють і збірка (`vite.config.ts`), і крок `Configure Supabase`, і перевірка бандла (`scripts/check-bundle.mjs`).
+
+Тести не залежать від цих змінних: логіку конфігурації перевіряють на тестових значеннях-заглушках з налаштуваннями і без них.
 
 ---
 
@@ -76,7 +79,7 @@ VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_…
 
 ```bash
 npm install
-npm run dev                    # http://localhost:5173 — одразу з Supabase з .env
+npm run dev                    # http://localhost:5173 (з Supabase, якщо є .env або .env.local)
 ```
 
 Щоб запустити локальний режим 1.0 без хмари, створіть `.env.local` з порожніми значеннями `VITE_SUPABASE_URL=` і `VITE_SUPABASE_PUBLISHABLE_KEY=`.
@@ -88,8 +91,9 @@ npm run dev                    # http://localhost:5173 — одразу з Supab
 1. **Settings → Pages → Source: GitHub Actions**.
 2. Зробіть push у `main`. Workflow `.github/workflows/deploy.yml` виконає по черзі:
    - `npm ci`;
+   - `Configure Supabase` (Secrets → Variables → `.env`);
    - тести, зокрема перевірку RLS на справжньому Postgres (PGlite);
-   - збірку з налаштуваннями з `.env`;
+   - збірку;
    - перевірку бандла на секретні ключі;
    - публікацію.
 3. Додайте адресу сайту до **Redirect URLs** у Supabase (див. крок 2).
