@@ -3,9 +3,10 @@ import type {
   UserProfile, Student, Subject, Lesson, Observation, Task, ObsEvent, Strategy, StrategyUse,
   IEPGoal, IEPMeasurement, Achievement, Template, Settings, Draft,
 } from '../types/models';
+import type { OutboxEntry, VersionEntry, ConflictEntry } from '../cloud/types';
 
 export const DB_NAME = 'inclusive-insight';
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 /**
  * Local IndexedDB storage. The repositories in ./repositories.ts are the only
@@ -28,6 +29,10 @@ export class InsightDB extends Dexie {
   templates!: Table<Template, string>;
   settings!: Table<Settings, string>;
   drafts!: Table<Draft, string>;
+  // Cloud sync bookkeeping (1.1). Never part of backups or analytics.
+  outbox!: Table<OutboxEntry, number>;
+  versions!: Table<VersionEntry, string>;
+  conflicts!: Table<ConflictEntry, string>;
 
   constructor(name = DB_NAME) {
     super(name);
@@ -61,6 +66,13 @@ export class InsightDB extends Dexie {
           if (!o.strategyIds) o.strategyIds = [];
         });
       });
+    // v3 — Inclusive Insight 1.1: cloud sync queue, known server versions, conflicts.
+    // Existing tables and records are untouched.
+    this.version(3).stores({
+      outbox: '++seq, uid, key, state',
+      versions: 'key, uid',
+      conflicts: 'key, uid',
+    });
   }
 }
 

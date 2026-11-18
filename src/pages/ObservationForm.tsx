@@ -12,6 +12,9 @@ import {
   SUBJECT_FIELD_RATINGS, SUPPORT_EFFECT, SUPPORT_LEVELS, TASK_RESULTS, TASK_START, TASK_TYPES, UNITS, type Option,
 } from '../lib/catalog';
 import { Badge, Button, Card, ChipGroup, IconButton, Input, PageSkeleton, SaveIndicator, Segmented, Select, Textarea } from '../components/ui';
+import { useCloudSaveFeedback } from '../components/cloud';
+import { useSyncStatus } from '../hooks/useSync';
+import { CloudOff } from 'lucide-react';
 import { useConfirm, useToast } from '../components/ui/feedback';
 import { cn, debounce, fmtDate, todayISO } from '../lib/utils';
 import type { ObservationMode } from '../types/models';
@@ -36,7 +39,9 @@ export default function ObservationForm() {
   const nav = useNavigate();
   const toast = useToast();
   const confirm = useConfirm();
-  const { user, student, visibleSubjects, subjects, strategies } = useSession();
+  const { user, student, visibleSubjects, subjects, strategies, mode: appMode } = useSession();
+  const sync = useSyncStatus();
+  const saveFeedback = useCloudSaveFeedback();
   const isEdit = !!id;
   const draftKey = isEdit ? `edit:${id}` : `new:${user.id}:${student!.id}`;
 
@@ -140,7 +145,7 @@ export default function ObservationForm() {
       const saved = await observationsRepo.save(user.id, { ...form, status: isEdit && status === 'draft' && form.status === 'final' ? 'draft' : status });
       await draftsRepo.remove(draftKey);
       setSaveState('saved');
-      toast(status === 'draft' ? 'Чернетку збережено локально' : 'Спостереження збережено');
+      saveFeedback(status === 'draft' ? 'Чернетку збережено' : 'Спостереження збережено');
       if (next === 'next') {
         const dayLessons = await db.lessons.where('[studentId+date]').equals([form.studentId, form.date]).sortBy('number');
         const curNum = saved.lessonNumber ?? 0;
@@ -441,6 +446,9 @@ export default function ObservationForm() {
       <div className="safe-bottom fixed inset-x-0 bottom-[64px] z-20 border-t border-line bg-card/95 backdrop-blur lg:bottom-0 lg:left-64">
         <div className="mx-auto flex max-w-4xl flex-wrap items-center gap-2 px-4 py-2.5">
           <SaveIndicator state={saveState} />
+          {appMode === 'cloud' && (!sync.online || sync.connection === 'offline') && (
+            <span className="inline-flex items-center gap-1 text-xs font-semibold text-sun-dark" role="status"><CloudOff className="h-3.5 w-3.5" />Офлайн: запис збережеться на пристрої й надішлеться пізніше</span>
+          )}
           <div className="ml-auto flex flex-wrap gap-2">
             <Button variant="ghost" size="sm" icon={<X className="h-4 w-4" />} onClick={cancel}>Скасувати</Button>
             <Button variant="secondary" size="sm" icon={<FileClock className="h-4 w-4" />} onClick={() => doSave('draft')} loading={busy}>Чернетка</Button>

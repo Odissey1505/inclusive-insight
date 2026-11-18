@@ -10,6 +10,7 @@ import { Badge, Button, EmptyState } from '../ui';
 import { createDemo } from '../../services/demo';
 import { useToast } from '../ui/feedback';
 import { PwaUpdater } from './PwaUpdater';
+import { SyncIndicator, CloudBanners, PasswordRecoveryModal, LogoutDialog } from '../cloud';
 
 export const NAV = [
   { to: '/', label: 'Головна', icon: LayoutDashboard, end: true },
@@ -33,7 +34,7 @@ function Logo() {
       </div>
       <div className="leading-tight">
         <div className="text-[15px] font-extrabold tracking-tight">Inclusive Insight</div>
-        <div className="text-[10px] font-semibold uppercase tracking-widest text-muted">версія 1.0</div>
+        <div className="text-[10px] font-semibold uppercase tracking-widest text-muted">версія 1.1</div>
       </div>
     </div>
   );
@@ -74,9 +75,10 @@ function StudentSwitcher() {
 }
 
 function UserMenu() {
-  const { user, logout } = useApp();
+  const { user, logout, mode, email } = useApp();
   const nav = useNavigate();
   const [open, setOpen] = useState(false);
+  const [logoutOpen, setLogoutOpen] = useState(false);
   if (!user) return null;
   return (
     <div className="relative">
@@ -89,13 +91,14 @@ function UserMenu() {
           <div className="animate-in absolute right-0 z-40 mt-2 w-60 rounded-2xl border border-line bg-card p-1.5 shadow-lift">
             <div className="px-3 py-2">
               <div className="text-sm font-bold">{user.name}</div>
-              <div className="text-xs text-muted">Локальний робочий простір</div>
+              <div className="truncate text-xs text-muted">{mode === 'cloud' ? email : 'Локальний робочий простір'}</div>
             </div>
             <button onClick={() => { setOpen(false); nav('/settings'); }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm hover:bg-primary-soft"><SettingsIcon className="h-4 w-4" /> Налаштування</button>
-            <button onClick={() => { setOpen(false); logout(); }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm hover:bg-primary-soft"><LogOut className="h-4 w-4" /> Змінити профіль</button>
+            <button onClick={() => { setOpen(false); if (mode === 'cloud') setLogoutOpen(true); else void logout(); }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm hover:bg-primary-soft"><LogOut className="h-4 w-4" /> {mode === 'cloud' ? 'Вийти з акаунта' : 'Змінити профіль'}</button>
           </div>
         </>
       )}
+      {mode === 'cloud' && <LogoutDialog open={logoutOpen} onClose={() => setLogoutOpen(false)} />}
     </div>
   );
 }
@@ -125,7 +128,7 @@ function MobileMore({ open, onClose }: { open: boolean; onClose: () => void }) {
 export function AppLayout() {
   const [more, setMore] = useState(false);
   const loc = useLocation();
-  const { student } = useApp();
+  const { student, mode } = useApp();
   useEffect(() => { window.scrollTo(0, 0); }, [loc.pathname]);
 
   const mobile = [NAV[0], NAV[1], NAV[2], NAV[4]];
@@ -145,7 +148,9 @@ export function AppLayout() {
           ))}
         </nav>
         <div className="mt-4 rounded-2xl bg-bg p-3 text-xs text-muted">
-          Дані зберігаються лише в цьому браузері. Регулярно створюйте резервні копії.
+          {mode === 'cloud'
+            ? 'Дані зберігаються у вашому хмарному акаунті й доступні на всіх пристроях. Демодані залишаються лише тут.'
+            : 'Дані зберігаються лише в цьому браузері. Регулярно створюйте резервні копії.'}
         </div>
       </aside>
 
@@ -155,6 +160,7 @@ export function AppLayout() {
           <div className="lg:hidden"><Logo /></div>
           <div className="hidden text-sm text-muted lg:block">{student?.isDemo && <Badge tone="sun"><FlaskConical className="h-3 w-3" /> Демонстраційні дані</Badge>}</div>
           <div className="flex items-center gap-2">
+            <SyncIndicator />
             <div className="hidden sm:block"><StudentSwitcher /></div>
             <UserMenu />
           </div>
@@ -163,8 +169,10 @@ export function AppLayout() {
       </header>
 
       <main id="main" className="mx-auto max-w-7xl px-4 pb-28 pt-5 sm:px-6 lg:pb-10">
+        <CloudBanners />
         <Outlet />
       </main>
+      <PasswordRecoveryModal />
 
       {/* Bottom nav (mobile) */}
       <nav className="safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-line bg-card/95 backdrop-blur lg:hidden" aria-label="Мобільна навігація">

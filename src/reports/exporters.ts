@@ -139,7 +139,7 @@ export async function exportPdf(r: ReportData) {
       td: { fontSize: 8.5 },
     },
     footer: (page: number, pages: number) => ({ text: `Inclusive Insight · ${r.student.name} · стор. ${page} з ${pages}`, alignment: 'center', fontSize: 8, color: '#A0AEC0', margin: [0, 15, 0, 0] }),
-    info: { title: r.title, creator: 'Inclusive Insight 1.0' },
+    info: { title: r.title, creator: 'Inclusive Insight 1.1' },
   };
   await new Promise<void>((resolve, reject) => {
     try {
@@ -226,7 +226,7 @@ export async function exportDocx(r: ReportData) {
   );
 
   const doc = new Document({
-    creator: 'Inclusive Insight 1.0',
+    creator: 'Inclusive Insight 1.1',
     title: r.title,
     styles: { default: { document: { run: { font: 'Calibri', size: 21, color: '25344A' } } } },
     sections: [{ properties: { page: { margin: { top: 900, bottom: 900, left: 900, right: 900 } } }, children }],

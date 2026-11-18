@@ -3,8 +3,9 @@ import { useLocation } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Settings as SettingsIcon, Palette, UserCog, BookMarked, ListChecks, Database, ShieldCheck, Sun, Moon, Monitor, ArrowUp, ArrowDown, Eye, EyeOff,
-  Plus, Trash2, Download, Upload, HardDrive, FlaskConical, Stethoscope, LogOut, Lock, RotateCcw, X, AlertTriangle, Check,
+  Plus, Trash2, Download, Upload, HardDrive, FlaskConical, Stethoscope, LogOut, Lock, RotateCcw, X, AlertTriangle, Check, Cloud,
 } from 'lucide-react';
+import { CloudSettings, LogoutDialog } from '../components/cloud';
 import { useSession } from '../hooks/useApp';
 import { db } from '../db/database';
 import { usersRepo, subjectsRepo, templatesRepo, checkIntegrity, settingsRepo, OWNER_TABLES, type IntegrityReport } from '../db/repositories';
@@ -28,6 +29,9 @@ const COLORS = ['#5B9BD5', '#8CCFB5', '#E8B04A', '#ECA5A0', '#C59BD8', '#6CC3D5'
 
 export default function Settings() {
   const loc = useLocation();
+  const { mode } = useSession();
+  const sections = mode === 'cloud' ? [{ id: 'cloud', label: 'Хмара', icon: Cloud }, ...SECTIONS] : SECTIONS;
+  const goBackup = () => document.getElementById('backup')?.scrollIntoView({ behavior: 'smooth' });
   useEffect(() => {
     const id = loc.hash.replace('#', '') || '';
     if (id) setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' }), 80);
@@ -36,7 +40,7 @@ export default function Settings() {
     <div className="animate-in">
       <PageHeader title="Налаштування" icon={<SettingsIcon className="h-5 w-5" />} />
       <nav className="no-print sticky top-[56px] z-10 -mx-4 mb-4 flex gap-1 overflow-x-auto bg-bg/90 px-4 py-2 backdrop-blur scrollbar-thin sm:top-14" aria-label="Розділи налаштувань">
-        {SECTIONS.map((s) => (
+        {sections.map((s) => (
           <a key={s.id} href={`#/settings#${s.id}`} onClick={(e) => { e.preventDefault(); document.getElementById(s.id)?.scrollIntoView({ behavior: 'smooth' }); }}
             className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-line bg-card px-3 py-1.5 text-sm font-semibold hover:border-primary/50">
             <s.icon className="h-4 w-4 text-primary" />{s.label}
@@ -44,6 +48,7 @@ export default function Settings() {
         ))}
       </nav>
       <div className="space-y-5">
+        {mode === 'cloud' && <CloudSettings onExportBackup={goBackup} />}
         <Appearance />
         <Profile />
         <Subjects />
@@ -77,9 +82,10 @@ function Appearance() {
 
 /* ----------------------------- Profile ----------------------------- */
 function Profile() {
-  const { user, logout } = useSession();
+  const { user, logout, mode, email } = useSession();
   const toast = useToast();
   const confirm = useConfirm();
+  const [logoutOpen, setLogoutOpen] = useState(false);
   const [name, setName] = useState(user.name);
   useEffect(() => setName(user.name), [user.name]);
   return (
@@ -91,8 +97,15 @@ function Profile() {
             <Input label="Ім'я" value={name} onChange={(e) => setName(e.target.value)} className="flex-1" />
             <Button disabled={!name.trim() || name === user.name} onClick={async () => { await usersRepo.update(user.id, { name: name.trim() }); toast("Ім'я змінено"); }}>Зберегти</Button>
           </div>
+          {mode === 'cloud' && <p className="mt-2 text-sm text-muted">Обліковий запис: <b className="text-ink">{email}</b>. Ім’я лише відображається в інтерфейсі й не використовується для входу.</p>}
+          {mode === 'cloud' ? (
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button variant="secondary" icon={<LogOut className="h-4 w-4" />} onClick={() => setLogoutOpen(true)}>Вийти з акаунта</Button>
+              <LogoutDialog open={logoutOpen} onClose={() => setLogoutOpen(false)} />
+            </div>
+          ) : (
           <div className="mt-4 flex flex-wrap gap-2">
-            <Button variant="secondary" icon={<LogOut className="h-4 w-4" />} onClick={logout}>Перемкнути профіль</Button>
+            <Button variant="secondary" icon={<LogOut className="h-4 w-4" />} onClick={() => logout()}>Перемкнути профіль</Button>
             <Button variant="ghost" className="text-coral-dark" icon={<Trash2 className="h-4 w-4" />} onClick={async () => {
               if (await confirm({ title: 'Видалити локальний профіль?', text: 'Буде видалено профіль і ВСІ його дані: учнів, спостереження, цілі, досягнення. Спершу створіть резервну копію.', danger: true, confirmLabel: 'Видалити профіль', requireText: user.name })) {
                 await usersRepo.remove(user.id);
@@ -100,6 +113,7 @@ function Profile() {
               }
             }}>Видалити профіль</Button>
           </div>
+          )}
         </div>
         <div>
           <span className="label">Аватар</span>
@@ -240,7 +254,7 @@ function Templates() {
 
 /* -------------------------- Data management -------------------------- */
 function DataManagement() {
-  const { user, student, setStudent } = useSession();
+  const { user, student, setStudent, mode: appMode } = useSession();
   const toast = useToast();
   const confirm = useConfirm();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -337,6 +351,12 @@ function DataManagement() {
   return (
     <Card title="Керування даними · Backup & Restore">
       <div id="backup" className="scroll-mt-32" />
+      {appMode === 'cloud' ? (
+        <div className="mb-4 flex gap-3 rounded-2xl border border-line bg-bg p-3.5 text-sm">
+          <Cloud className="h-5 w-5 shrink-0 text-primary" />
+          <p className="text-muted">Основна копія ваших даних — у хмарі Supabase. Резервний JSON-файл — додатковий захист і спосіб перенести дані в інший акаунт. {userSettings?.lastBackupAt ? `Остання копія: ${fmtDate(new Date(userSettings.lastBackupAt).toISOString().slice(0, 10))}.` : 'Копій ще не створено.'}</p>
+        </div>
+      ) : (
       <div className="mb-4 flex gap-3 rounded-2xl border border-sun bg-sun-soft p-3.5 text-sm">
         <AlertTriangle className="h-5 w-5 shrink-0 text-sun-dark" />
         <div>
@@ -348,6 +368,7 @@ function DataManagement() {
           </ul>
         </div>
       </div>
+      )}
 
       <div className="grid gap-5 lg:grid-cols-2">
         {/* Export */}
@@ -456,6 +477,7 @@ function DataManagement() {
               <span className="label">Спосіб імпорту</span>
               <Segmented value={mode} onChange={setMode} options={[{ key: 'merge', label: 'Об’єднати' }, { key: 'replace', label: 'Замінити' }]} />
               <p className="hint mt-1.5">{mode === 'merge' ? 'Дублікати за ID: залишається новіша версія запису.' : 'Поточні дані профілю буде повністю замінено.'}</p>
+              {appMode === 'cloud' && <p className="mt-2 rounded-xl bg-sun-soft p-2.5 text-xs text-ink">Ви працюєте з хмарним акаунтом: імпортовані зміни {mode === 'replace' ? '(включно з видаленням поточних записів) ' : ''}буде також надіслано в хмару й на всі ваші пристрої.</p>}
             </div>
           </div>
         )}
@@ -473,12 +495,22 @@ function DataManagement() {
 
 /* ------------------------------ Privacy ------------------------------ */
 function Privacy() {
+  const { mode } = useSession();
   return (
     <Card title="Приватність">
       <div id="privacy" className="scroll-mt-32" />
       <div className="grid gap-3 text-sm md:grid-cols-2">
+        {mode === 'cloud' ? (
+          <>
+            <div className="rounded-2xl bg-bg p-4"><h3 className="mb-1 font-bold">Хмарне збереження</h3><p className="text-muted">Записи зберігаються у вашому проєкті Supabase. Правила Row Level Security дозволяють кожному акаунту бачити й змінювати лише власні записи. На пристрої лишається копія для швидкої роботи та офлайн-режиму. Service Worker кешує лише файли додатка. Трекерів немає.</p></div>
+            <div className="rounded-2xl bg-bg p-4"><h3 className="mb-1 font-bold">Вхід і спільні комп’ютери</h3><p className="text-muted">Вхід виконується за email і паролем (Supabase Auth). На спільному комп’ютері виходьте з акаунта й видаляйте копію даних з пристрою: дані в хмарі при цьому не зміняться.</p></div>
+          </>
+        ) : (
+          <>
         <div className="rounded-2xl bg-bg p-4"><h3 className="mb-1 font-bold">Локальне збереження</h3><p className="text-muted">Усі записи зберігаються в IndexedDB цього браузера. Додаток не має сервера, не використовує трекерів і не передає дані стороннім сервісам. Service Worker кешує лише файли додатка, а не ваші записи.</p></div>
         <div className="rounded-2xl bg-bg p-4"><h3 className="mb-1 font-bold">Немає справжньої авторизації</h3><p className="text-muted">Вхід за іменем — це перемикач робочих просторів, а не захист. Профілі на одному пристрої не захищені один від одного. Не залишайте додаток відкритим на спільному комп’ютері.</p></div>
+          </>
+        )}
         <div className="rounded-2xl bg-bg p-4"><h3 className="mb-1 font-bold">Псевдоніми</h3><p className="text-muted">Використовуйте псевдоніми чи ініціали замість повних імен дітей. Для роботи з реальними персональними даними потрібні належний технічний захист, правові підстави та погодження з адміністрацією закладу.</p></div>
         <div className="rounded-2xl bg-bg p-4"><h3 className="mb-1 font-bold">Резервні копії</h3><p className="text-muted">Файл копії містить усі записи профілю. Шифруйте його паролем, якщо зберігаєте на флешці чи в хмарі. Пароль не зберігається у файлі — його неможливо відновити.</p></div>
       </div>

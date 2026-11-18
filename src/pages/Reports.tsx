@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
-import { FileText, FileDown, FileSpreadsheet, FileType2, Sheet, RefreshCw, CalendarRange, Wand2 } from 'lucide-react';
+import { FileText, FileDown, FileSpreadsheet, FileType2, Sheet, RefreshCw, CalendarRange, Wand2, AlertTriangle } from 'lucide-react';
+import { refresh, syncStore } from '../cloud/sync';
+import { TABLE_LABELS } from '../cloud/migration';
+import type { OwnerTable } from '../db/repositories';
 import { useSession } from '../hooks/useApp';
 import { buildReportData, defaultInclude, REPORT_TYPES, type ReportData, type ReportInclude, type ReportType, SUBJECT_HEAD, OBS_HEAD, ACH_HEAD } from '../reports/reportData';
 import { periodRange, type DateRange } from '../analytics/engine';
@@ -28,7 +31,9 @@ function rangeFor(type: ReportType, anchor: string): DateRange {
 }
 
 export default function Reports() {
-  const { user, students, student, subjects } = useSession();
+  const { user, students, student, subjects, mode } = useSession();
+  const [dataIssues, setDataIssues] = useState<string[]>([]);
+  const [ackIssues, setAckIssues] = useState(false);
   const toast = useToast();
   const [type, setType] = useState<ReportType>('weekly');
   const [studentId, setStudentId] = useState(student!.id);
@@ -46,8 +51,23 @@ export default function Reports() {
   const generate = async () => {
     if (range.to < range.from) return toast('Кінцева дата раніше за початкову', 'error');
     if (type === 'subject' && !subjectIds.length) return toast('Оберіть хоча б один предмет', 'error');
+    const owned = students.find((x) => x.id === studentId && x.ownerId === user.id);
+    if (!owned) return toast('Обраний учень не належить до вашого акаунта', 'error');
     setBusy('gen');
     try {
+      // Cloud: make sure the report is built from the latest cloud data and say so if it is not.
+      if (mode === 'cloud') {
+        if (navigator.onLine) await refresh();
+        const st = syncStore.get();
+        const issues: string[] = [];
+        if (!st.online || st.connection === 'offline') issues.push('Немає з’єднання з хмарою — використано дані, збережені на цьому пристрої' + (st.lastPullAt ? ` (оновлено ${new Date(st.lastPullAt).toLocaleString('uk-UA')})` : '') + '.');
+        else if (!st.pullComplete) issues.push(`Не вдалося завантажити з хмари: ${st.failedTables.map((t) => TABLE_LABELS[t as OwnerTable] ?? t).join(', ') || 'частину даних'}.`);
+        if (st.pending) issues.push(`${st.pending} змін ще не надіслано в хмару (вони враховані у звіті, але інші пристрої їх ще не бачать).`);
+        if (st.failed) issues.push(`${st.failed} змін не вдалося зберегти в хмарі.`);
+        if (st.conflicts) issues.push(`${st.conflicts} записів мають невирішені конфлікти версій — у звіті використано версію з цього пристрою.`);
+        setDataIssues(issues);
+        setAckIssues(false);
+      }
       const d = await buildReportData({ type, studentId, range, subjectIds, include, authorName: author });
       setData(d);
       setSummary(d.summary);
@@ -60,6 +80,7 @@ export default function Reports() {
 
   const exportAs = async (fmt: 'pdf' | 'docx' | 'xlsx' | 'csv') => {
     if (!data) return;
+    if (dataIssues.length && !ackIssues) return toast('Дані для звіту можуть бути неповними — підтвердьте, що формуєте звіт із наявних даних', 'error');
     setBusy(fmt);
     try {
       const ex = await import('../reports/exporters');
@@ -122,6 +143,13 @@ export default function Reports() {
       {r && (
         <div id="report-preview" className="space-y-4">
           <Card title="3. Експорт" subtitle="Підсумок можна відредагувати перед експортом. Українські символи підтримуються у всіх форматах.">
+            {dataIssues.length > 0 && (
+              <div className="mb-3 rounded-2xl bg-sun-soft p-3 text-sm" role="alert">
+                <p className="mb-1 flex items-center gap-2 font-semibold text-sun-dark"><AlertTriangle className="h-4 w-4" />Дані можуть бути неповними</p>
+                <ul className="list-disc space-y-0.5 pl-5 text-ink">{dataIssues.map((i) => <li key={i}>{i}</li>)}</ul>
+                <label className="mt-2 flex items-center gap-2 text-ink"><input type="checkbox" checked={ackIssues} onChange={(e) => setAckIssues(e.target.checked)} />Розумію, сформувати звіт із наявних даних</label>
+              </div>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button icon={<FileDown className="h-4 w-4" />} loading={busy === 'pdf'} onClick={() => exportAs('pdf')}>PDF</Button>
               <Button variant="secondary" icon={<FileType2 className="h-4 w-4" />} loading={busy === 'docx'} onClick={() => exportAs('docx')}>DOCX</Button>

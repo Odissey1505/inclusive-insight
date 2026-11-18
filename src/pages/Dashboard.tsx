@@ -25,7 +25,7 @@ const greeting = () => {
 const ratioHint = (r: Ratio, what: string) => (r.den ? `${r.num} з ${r.den} ${what}${r.lowData ? ' · мало даних' : ''}` : 'немає оцінених записів');
 
 export default function Dashboard() {
-  const { user, student, subjectName, subjectColor } = useSession();
+  const { user, student, subjectName, subjectColor, mode } = useSession();
   const nav = useNavigate();
   const confirm = useConfirm();
   const toast = useToast();
@@ -96,7 +96,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {backupOld && !student!.isDemo && ds30.observations.length > 0 && (
+      {backupOld && mode !== 'cloud' && !student!.isDemo && ds30.observations.length > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-sun bg-sun-soft p-3 text-sm">
           <ShieldAlert className="h-5 w-5 text-sun-dark" />
           <span className="flex-1">Дані зберігаються лише в цьому браузері. {appSettings?.lastBackupAt ? 'Остання резервна копія понад 2 тижні тому.' : 'Резервну копію ще не створено.'}</span>

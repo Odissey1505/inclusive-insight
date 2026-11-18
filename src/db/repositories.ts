@@ -76,19 +76,29 @@ export const usersRepo = {
   },
 };
 
-/** Seeds default subjects and strategies for a fresh workspace. */
-export async function bootstrapOwner(ownerId: ID) {
+/**
+ * Seeds default subjects and strategies for a fresh workspace.
+ * In cloud mode `idFor` gives deterministic ids, so two devices that seed at the
+ * same time produce the same records instead of duplicates.
+ */
+export async function bootstrapOwner(ownerId: ID, idFor?: (kind: 'subject' | 'strategy', key: string) => Promise<string>) {
   const hasSubjects = await db.subjects.where('ownerId').equals(ownerId).count();
   if (!hasSubjects) {
-    await db.subjects.bulkAdd(
-      DEFAULT_SUBJECTS.map((s, i) => stamp(ownerId, { ...s, order: i, hidden: false }) as Subject),
-    );
+    const rows: Subject[] = [];
+    for (const [i, s] of DEFAULT_SUBJECTS.entries()) {
+      const id = idFor ? await idFor('subject', s.templateKey) : uid();
+      rows.push(stamp(ownerId, { ...s, id, order: i, hidden: false }) as Subject);
+    }
+    await db.subjects.bulkAdd(rows);
   }
   const hasStrategies = await db.strategies.where('ownerId').equals(ownerId).count();
   if (!hasStrategies) {
-    await db.strategies.bulkAdd(
-      DEFAULT_STRATEGIES.map((s) => stamp(ownerId, { ...s, isDefault: true }) as Strategy),
-    );
+    const rows: Strategy[] = [];
+    for (const s of DEFAULT_STRATEGIES) {
+      const id = idFor ? await idFor('strategy', s.name) : uid();
+      rows.push(stamp(ownerId, { ...s, id, isDefault: true }) as Strategy);
+    }
+    await db.strategies.bulkAdd(rows);
   }
 }
 

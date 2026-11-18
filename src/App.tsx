@@ -38,8 +38,13 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
 const S = ({ children }: { children: ReactNode }) => <RequireStudent>{children}</RequireStudent>;
 
 function Shell() {
-  const { ready, user } = useApp();
-  if (!ready) return <div className="mx-auto max-w-5xl p-6"><PageSkeleton /></div>;
+  const { ready, user, mode } = useApp();
+  if (!ready) return (
+    <div className="mx-auto max-w-5xl p-6">
+      {mode === 'cloud' && <p className="mb-4 text-center text-sm font-semibold text-muted" role="status">{user ? 'Завантаження ваших даних з хмари…' : 'Перевірка сесії…'}</p>}
+      <PageSkeleton />
+    </div>
+  );
   if (!user) return <Welcome />;
   return (
     <Suspense fallback={<div className="mx-auto max-w-7xl p-6"><PageSkeleton /></div>}>
