@@ -1,5 +1,4 @@
-
-name: Deploy Inclusive Insight
+name: Deploy to GitHub Pages
 
 on:
   push:
@@ -12,46 +11,52 @@ permissions:
   id-token: write
 
 concurrency:
-  group: github-pages
+  group: pages
   cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
           cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build
-        run: npm run build
+      - run: npm ci
+      - run: npm test
+      # Supabase URL and publishable key come from the committed .env file.
+      # Optional: repository secrets with the same names override them (e.g. for another project).
+      - name: Optional Supabase override from repository secrets
         env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
-
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+          OVERRIDE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          OVERRIDE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          if [ -n "$OVERRIDE_URL" ]; then echo "VITE_SUPABASE_URL=$OVERRIDE_URL" >> "$GITHUB_ENV"; echo "Using URL from secrets."; fi
+          if [ -n "$OVERRIDE_KEY" ]; then echo "VITE_SUPABASE_PUBLISHABLE_KEY=$OVERRIDE_KEY" >> "$GITHUB_ENV"; echo "Using key from secrets."; fi
+      - name: Check Supabase configuration (without printing values)
+        run: |
+          if grep -q '^VITE_SUPABASE_URL=https' .env && grep -q '^VITE_SUPABASE_PUBLISHABLE_KEY=.' .env; then
+            echo "Supabase configuration found in .env."
+          else
+            echo "::warning::Supabase is not configured — the site will run in local mode (data only in the browser)."
+          fi
+      - run: npm run build
+      - name: Make sure no secret key ended up in the bundle
+        run: node scripts/check-bundle.mjs dist
+      - name: SPA fallback
+        run: cp dist/index.html dist/404.html
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
 
   deploy:
+    needs: build
+    runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
     steps:
-      - name: Deploy
-        id: deployment
+      - id: deployment
         uses: actions/deploy-pages@v4
