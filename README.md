@@ -73,7 +73,7 @@ npm run preview    # перегляд production-збірки
    git remote add origin https://github.com/USERNAME/inclusive-insight.git
    git push -u origin main
    ```
-2. На GitHub: **Settings → Pages → Build and deployment → Source: GitHub Actions**. Адреса Supabase і publishable key уже записані у файлі `.env`, тож секрети додавати не потрібно (див. [docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md)).
+2. На GitHub: **Settings → Pages → Build and deployment → Source: GitHub Actions**. Адресу Supabase і publishable key передайте через **Variables** репозиторію `VITE_SUPABASE_URL` і `VITE_SUPABASE_PUBLISHABLE_KEY` або через закомічений `.env` (див. [docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md), крок 3).
 3. Workflow `.github/workflows/deploy.yml` запуститься автоматично при кожному push у `main`: встановить залежності, прожене тести, збере проєкт і опублікує `dist/`.
 4. Додаток буде доступний за адресою `https://USERNAME.github.io/inclusive-insight/`.
 
