@@ -1,0 +1,99 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --c-bg: 246 249 253;
+  --c-card: 255 255 255;
+  --c-ink: 37 52 74;
+  --c-muted: 113 128 150;
+  --c-line: 229 236 243;
+  --c-primary-soft: 234 244 255;
+  --c-mint-soft: 233 248 241;
+  --c-sun-soft: 253 246 228;
+  --c-coral-soft: 252 238 237;
+  --c-primary-dark: 44 104 165;
+  --c-mint-dark: 30 118 88;
+  --c-sun-dark: 140 98 10;
+  --c-coral-dark: 176 66 60;
+  color-scheme: light;
+}
+.dark {
+  --c-bg: 16 22 33;
+  --c-card: 24 32 46;
+  --c-ink: 226 233 243;
+  --c-muted: 148 163 184;
+  --c-line: 44 56 75;
+  --c-primary-soft: 30 48 72;
+  --c-mint-soft: 25 52 46;
+  --c-sun-soft: 58 50 30;
+  --c-coral-soft: 62 36 38;
+  --c-primary-dark: 142 190 236;
+  --c-mint-dark: 140 207 181;
+  --c-sun-dark: 244 211 139;
+  --c-coral-dark: 236 165 160;
+  color-scheme: dark;
+}
+
+html { -webkit-text-size-adjust: 100%; }
+body {
+  @apply bg-bg text-ink font-sans antialiased;
+  font-feature-settings: 'ss01';
+}
+.compact { font-size: 15px; }
+
+@layer components {
+  .card { @apply bg-card rounded-2xl border border-line shadow-soft; }
+  .input {
+    @apply w-full rounded-xl border border-line bg-card px-3.5 py-2.5 text-[15px] text-ink placeholder:text-muted/70
+      outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/15 disabled:opacity-60;
+  }
+  .label { @apply mb-1.5 block text-sm font-semibold text-ink; }
+  .hint { @apply text-xs text-muted; }
+  .focus-ring { @apply outline-none focus-visible:ring-4 focus-visible:ring-primary/30; }
+  .section-title { @apply text-base font-bold text-ink; }
+  .gradient-hero { background: linear-gradient(120deg, rgb(var(--c-primary-soft)) 0%, rgb(var(--c-mint-soft)) 100%); }
+}
+
+/* Skeleton shimmer */
+.skeleton { background: linear-gradient(90deg, rgb(var(--c-line)) 0%, rgb(var(--c-bg)) 50%, rgb(var(--c-line)) 100%); background-size: 200% 100%; animation: shimmer 1.3s infinite; }
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+@keyframes fade-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.animate-in { animation: fade-up .25s ease-out both; }
+
+.reduce-motion *, .reduce-motion *::before, .reduce-motion *::after { animation: none !important; transition: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}
+
+/* Recharts in dark mode */
+.dark .recharts-cartesian-grid line { stroke: rgb(var(--c-line)); }
+.recharts-text { fill: rgb(var(--c-muted)); font-size: 12px; }
+.recharts-tooltip-wrapper .recharts-default-tooltip { background: rgb(var(--c-card)) !important; border: 1px solid rgb(var(--c-line)) !important; border-radius: 12px; }
+
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+.scrollbar-thin::-webkit-scrollbar { height: 6px; width: 6px; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: rgb(var(--c-line)); border-radius: 6px; }
+
+@media print {
+  aside, nav, .no-print { display: none !important; }
+}
+
+/* Data-viz palette (validated categorical order, light & dark selected separately) */
+:root {
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100;
+  --series-5: #e87ba4; --series-6: #008300; --series-7: #6250d6; --series-8: #e34948;
+  --seq-0: #eef2f6; --seq-1: #cde2fb; --seq-2: #9ec5f4; --seq-3: #6da7ec; --seq-4: #3987e5; --seq-5: #256abf; --seq-6: #104281;
+  --grid: #e9eef4;
+}
+.dark {
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
+  --series-5: #d55181; --series-6: #0ca30c; --series-7: #9085e9; --series-8: #e66767;
+  --seq-0: #222c3b; --seq-1: #104281; --seq-2: #184f95; --seq-3: #256abf; --seq-4: #3987e5; --seq-5: #6da7ec; --seq-6: #9ec5f4;
+  --grid: #2c384b;
+}
+
+/* Text on the strongest heatmap cells: light theme → white, dark theme (light cells) → dark ink */
+:root { --seq-on-high: #ffffff; }
+.dark { --seq-on-high: #0f1a2a; }
+.seq-on-high { color: var(--seq-on-high); }
