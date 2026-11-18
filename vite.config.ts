@@ -1,5 +1,5 @@
 /// <reference types="vitest" />
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'node:path';
@@ -8,7 +8,29 @@ import path from 'node:path';
 // з будь-якою назвою репозиторію. Можна задати явно через змінну BASE_PATH (наприклад, /inclusive-insight/).
 const base = process.env.BASE_PATH || './';
 
-export default defineConfig({
+/** Refuse to build if a secret / service_role key was put into the frontend env. */
+function assertNoSecretKey(mode: string) {
+  const env = { ...loadEnv(mode, process.cwd(), 'VITE_'), ...process.env };
+  for (const [k, v] of Object.entries(env)) {
+    if (!k.startsWith('VITE_') || !v) continue;
+    let serviceRole = false;
+    const parts = v.split('.');
+    if (parts.length === 3) {
+      try {
+        serviceRole = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'))?.role === 'service_role';
+      } catch {
+        /* not a JWT */
+      }
+    }
+    if (/^sb_secret_/i.test(v) || serviceRole) {
+      throw new Error(`${k} містить секретний (service_role / sb_secret_) ключ Supabase. У frontend дозволено лише publishable (anon) ключ.`);
+    }
+  }
+}
+
+export default defineConfig(({ mode }) => {
+  assertNoSecretKey(mode);
+  return {
   base,
   resolve: { alias: { '@': path.resolve(__dirname, 'src') } },
   plugins: [
@@ -60,4 +82,5 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.test.ts'],
   },
+};
 });

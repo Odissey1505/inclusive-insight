@@ -1,12 +1,19 @@
-# Inclusive Insight 1.0
+# Inclusive Insight 1.1
 
 *Your Inclusive Education Companion*
 
 Електронний журнал педагогічних спостережень для асистента вчителя: уроки, спостереження, завдання, рівні підтримки, цілі ІПР, досягнення, стратегії, аналітика та звіти.
 
-Додаток повністю автономний: React + TypeScript SPA/PWA, дані зберігаються в IndexedDB браузера, сервер, хмара й AI API не використовуються. GitHub Pages лише роздає статичні файли.
+React + TypeScript SPA/PWA на GitHub Pages. З версії **1.1** дані зберігаються в **Supabase** (PostgreSQL + Row Level Security) і доступні на ноутбуці, телефоні й планшеті після входу за email і паролем. IndexedDB лишається для локальної копії, офлайн-черги змін і чернеток форм. Аналітика та звіти, як і раніше, рахуються в браузері.
 
-> **Важливо.** Вхід за іменем — це локальний перемикач робочих просторів, а не захищена автентифікація. Профілі на одному пристрої не захищені один від одного. Використовуйте псевдоніми учнів і регулярно робіть резервні копії.
+| Режим | Коли | Вхід | Де дані |
+|---|---|---|---|
+| **Хмарний (1.1)** | задано `VITE_SUPABASE_URL` і `VITE_SUPABASE_PUBLISHABLE_KEY` | Supabase Auth: email + пароль | Supabase (RLS) + локальна копія на пристрої |
+| **Локальний (1.0)** | змінні не задано | ім'я (локальний робочий простір, не захист) | лише в цьому браузері |
+
+📘 **Налаштування Supabase і GitHub Pages:** [docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md) · **Що змінилося в 1.1, перенесення записів 1.0, перевірки:** [docs/CHANGELOG_1.1.md](docs/CHANGELOG_1.1.md)
+
+> **Важливо.** Використовуйте псевдоніми учнів. У локальному режимі вхід за іменем — це лише перемикач робочих просторів, а не захищена автентифікація.
 
 ---
 
@@ -46,7 +53,7 @@
 ```bash
 npm install
 npm run dev        # http://localhost:5173
-npm test           # unit-тести (аналітика, дані, міграції, імпорт/експорт)
+npm test           # тести: аналітика, дані, синхронізація, RLS на справжньому Postgres (PGlite)
 npm run build      # production-збірка в dist/
 npm run preview    # перегляд production-збірки
 ```
@@ -66,7 +73,7 @@ npm run preview    # перегляд production-збірки
    git remote add origin https://github.com/USERNAME/inclusive-insight.git
    git push -u origin main
    ```
-2. На GitHub: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+2. На GitHub: **Settings → Pages → Build and deployment → Source: GitHub Actions**. Адреса Supabase і publishable key уже записані у файлі `.env`, тож секрети додавати не потрібно (див. [docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md)).
 3. Workflow `.github/workflows/deploy.yml` запуститься автоматично при кожному push у `main`: встановить залежності, прожене тести, збере проєкт і опублікує `dist/`.
 4. Додаток буде доступний за адресою `https://USERNAME.github.io/inclusive-insight/`.
 
@@ -95,16 +102,19 @@ src/
   components/charts        обгортки над Recharts
   components/layout        Sidebar (desktop), нижня навігація (mobile), PWA-оновлення
   pages/                   сторінки
-  test/                    vitest + fake-indexeddb
+  cloud/                   1.1: Supabase client, auth, синхронізація, перенесення записів 1.0
+  components/cloud         індикатор синхронізації, конфлікти, розділ «Хмара», майстер імпорту
+  test/                    vitest + fake-indexeddb + PGlite (RLS)
+supabase/migrations/       SQL-схема, тригери версій, RLS-політики
 ```
 
-UI звертається до даних лише через `db/repositories.ts`. Щоб у версії 2.0 перейти на серверну базу (наприклад, Supabase), достатньо реалізувати ті самі функції репозиторіїв поверх API — сторінки, аналітика й звіти не зміняться.
+UI звертається до даних лише через `db/repositories.ts`. У 1.1 зміни, зроблені через репозиторії, перехоплюються хуками Dexie й надсилаються в Supabase (`cloud/sync.ts`), а дані з хмари записуються в ті самі локальні таблиці. Тому сторінки, аналітика й звіти не потребували переписування.
 
 ### Таблиці IndexedDB
 
-`users, students, subjects, lessons, observations, tasks, events, strategies, strategyUses, iepGoals, iepMeasurements, achievements, templates, settings, drafts`
+`users, students, subjects, lessons, observations, tasks, events, strategies, strategyUses, iepGoals, iepMeasurements, achievements, templates, settings, drafts` + (1.1) `outbox, versions, conflicts`
 
-Схема має версії (`version(1)`, `version(2)`) з міграцією; тест перевіряє оновлення наявної бази v1.
+Схема має версії (`version(1)`–`version(3)`) з міграціями; тест перевіряє оновлення наявної бази v1. Відповідні таблиці Supabase мають префікс `ii_` (див. `supabase/migrations`).
 
 ---
 
@@ -118,7 +128,7 @@ UI звертається до даних лише через `db/repositories.t
 
 Незашифрований файл містить усі нотатки про учня — зберігайте його так само обережно, як паперовий журнал.
 
-## Межі локального збереження
+## Межі локального збереження (локальний режим)
 
 * Дані зберігаються лише в цьому браузері на цьому пристрої; інший пристрій їх автоматично не отримає.
 * Очищення даних браузера може їх видалити. Приватний режим не підходить для тривалої роботи.
@@ -127,14 +137,14 @@ UI звертається до даних лише через `db/repositories.t
 
 ## Конфіденційність
 
-Додаток не передає дані на сторонні сервіси й не містить трекерів. Водночас це не захищена система обробки персональних даних: для роботи з реальними даними дитини потрібні належні технічні засоби захисту, правові підстави та погодження з адміністрацією закладу. Для тестування використовуйте лише вигадані дані (деморежим).
+Додаток не містить трекерів. У хмарному режимі дані передаються лише у ваш проєкт Supabase і захищені Row Level Security: кожен акаунт бачить тільки власні записи. У локальному режимі дані не залишають браузер. Водночас для роботи з реальними даними дитини потрібні належні технічні засоби захисту, правові підстави та погодження з адміністрацією закладу. Для тестування використовуйте лише вигадані дані (деморежим).
 
 ---
 
 ## Технології
 
-React 18 · TypeScript · Vite 6 · Tailwind CSS 3 · Dexie 4 · Recharts · Lucide · date-fns · React Router (HashRouter) · vite-plugin-pwa · pdfmake · docx · SheetJS · Vitest
+React 18 · TypeScript · Vite 6 · Tailwind CSS 3 · Supabase (Auth, PostgreSQL, RLS, Realtime) · Dexie 4 · Recharts · Lucide · date-fns · React Router (HashRouter) · vite-plugin-pwa · pdfmake · docx · SheetJS · Vitest
 
 ## Можливий розвиток (2.0)
 
-Захищені облікові записи, серверна база, синхронізація пристроїв, ролі педагогів, командна робота, хмарні резервні копії, розширена звітність.
+Ролі педагогів і командний доступ до учня, хмарні резервні копії за розкладом, розширена звітність.
