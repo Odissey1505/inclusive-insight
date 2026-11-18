@@ -24,23 +24,17 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - run: npm test
-      # Supabase URL and publishable key come from the committed .env file.
-      # Optional: repository secrets with the same names override them (e.g. for another project).
-      - name: Optional Supabase override from repository secrets
+      # Supabase configuration is resolved BEFORE tests and build.
+      # Priority: repository Secrets → repository Variables → committed .env.
+      # Values are never printed; a secret / service_role key stops the workflow.
+      - name: Configure Supabase (values are not printed)
         env:
-          OVERRIDE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          OVERRIDE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
-        run: |
-          if [ -n "$OVERRIDE_URL" ]; then echo "VITE_SUPABASE_URL=$OVERRIDE_URL" >> "$GITHUB_ENV"; echo "Using URL from secrets."; fi
-          if [ -n "$OVERRIDE_KEY" ]; then echo "VITE_SUPABASE_PUBLISHABLE_KEY=$OVERRIDE_KEY" >> "$GITHUB_ENV"; echo "Using key from secrets."; fi
-      - name: Check Supabase configuration (without printing values)
-        run: |
-          if grep -q '^VITE_SUPABASE_URL=https' .env && grep -q '^VITE_SUPABASE_PUBLISHABLE_KEY=.' .env; then
-            echo "Supabase configuration found in .env."
-          else
-            echo "::warning::Supabase is not configured — the site will run in local mode (data only in the browser)."
-          fi
+          SECRET_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SECRET_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VAR_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VAR_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+        run: node scripts/configure-supabase.mjs
+      - run: npm test
       - run: npm run build
       - name: Make sure no secret key ended up in the bundle
         run: node scripts/check-bundle.mjs dist
