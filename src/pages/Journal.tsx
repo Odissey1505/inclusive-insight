@@ -10,6 +10,7 @@ import { Badge, Button, Card, EmptyState, IconButton, Input, PageHeader, PageSke
 import { useConfirm, useToast } from '../components/ui/feedback';
 import { fmtDate, cn, plural } from '../lib/utils';
 import type { Observation, Task } from '../types/models';
+import { ScheduledDay } from '../components/schedule/ScheduledDay';
 
 type Sort = 'date_desc' | 'date_asc' | 'subject';
 
@@ -103,6 +104,9 @@ export default function Journal() {
           <Button variant="secondary" icon={<Zap className="h-4 w-4" />} onClick={() => nav('/observation/new?mode=quick')}>Швидкий запис</Button>
           <Button icon={<Plus className="h-4 w-4" />} onClick={() => nav('/observation/new')}>Нове спостереження</Button>
         </>} />
+
+      {/* Smart Schedule: lessons of the chosen date with observation status */}
+      <ScheduledDay initialDate={params.get('day') ?? undefined} onDateChange={(d) => { const p = new URLSearchParams(params); p.set('day', d); setParams(p, { replace: true }); }} />
 
       <Card className="mb-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center">

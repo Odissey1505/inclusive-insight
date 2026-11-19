@@ -11,6 +11,8 @@ const Journal = lazy(() => import('./pages/Journal'));
 const ObservationView = lazy(() => import('./pages/ObservationView'));
 const ObservationForm = lazy(() => import('./pages/ObservationForm'));
 const CalendarPage = lazy(() => import('./pages/Calendar'));
+const SchedulePage = lazy(() => import('./pages/Schedule'));
+const ScheduleWizard = lazy(() => import('./pages/ScheduleWizard'));
 const Analytics = lazy(() => import('./pages/Analytics'));
 const IEP = lazy(() => import('./pages/IEP'));
 const Achievements = lazy(() => import('./pages/Achievements'));
@@ -56,6 +58,9 @@ function Shell() {
           <Route path="observation/new" element={<S><ObservationForm /></S>} />
           <Route path="observation/:id/edit" element={<S><ObservationForm /></S>} />
           <Route path="calendar" element={<S><CalendarPage /></S>} />
+          <Route path="schedule" element={<S><SchedulePage /></S>} />
+          <Route path="schedule/new" element={<S><ScheduleWizard /></S>} />
+          <Route path="schedule/:id/edit" element={<S><ScheduleWizard /></S>} />
           <Route path="analytics" element={<S><Analytics /></S>} />
           <Route path="iep" element={<S><IEP /></S>} />
           <Route path="achievements" element={<S><Achievements /></S>} />

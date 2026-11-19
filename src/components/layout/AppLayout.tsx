@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
-  LayoutDashboard, BookOpenText, PlusCircle, CalendarDays, BarChart3, Target, Award, Lightbulb, FileText, UserRound,
+  LayoutDashboard, BookOpenText, PlusCircle, CalendarDays, CalendarClock, BarChart3, Target, Award, Lightbulb, FileText, UserRound,
   Settings as SettingsIcon, MoreHorizontal, X, FlaskConical, ChevronDown, LogOut, UserPlus, Users,
 } from 'lucide-react';
 import { useApp } from '../../hooks/useApp';
@@ -16,6 +16,7 @@ export const NAV = [
   { to: '/', label: 'Головна', icon: LayoutDashboard, end: true },
   { to: '/journal', label: 'Журнал', icon: BookOpenText },
   { to: '/observation/new', label: 'Нове спостереження', icon: PlusCircle },
+  { to: '/schedule', label: 'Розклад', icon: CalendarClock },
   { to: '/calendar', label: 'Календар', icon: CalendarDays },
   { to: '/analytics', label: 'Аналітика', icon: BarChart3 },
   { to: '/iep', label: 'Цілі ІПР', icon: Target },
@@ -34,7 +35,7 @@ function Logo() {
       </div>
       <div className="leading-tight">
         <div className="text-[15px] font-extrabold tracking-tight">Inclusive Insight</div>
-        <div className="text-[10px] font-semibold uppercase tracking-widest text-muted">версія 1.1</div>
+        <div className="text-[10px] font-semibold uppercase tracking-widest text-muted">версія 1.2</div>
       </div>
     </div>
   );
@@ -131,7 +132,7 @@ export function AppLayout() {
   const { student, mode } = useApp();
   useEffect(() => { window.scrollTo(0, 0); }, [loc.pathname]);
 
-  const mobile = [NAV[0], NAV[1], NAV[2], NAV[4]];
+  const mobile = [NAV[0], NAV[1], NAV[2], NAV[3]]; // Головна, Журнал, Нове, Розклад
   return (
     <div className="min-h-screen lg:pl-64">
       <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-2 focus:top-2 focus:z-50 focus:rounded-xl focus:bg-card focus:p-3">Перейти до вмісту</a>

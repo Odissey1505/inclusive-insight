@@ -3,20 +3,21 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   PlusCircle, Zap, CalendarDays, BarChart3, FileText, BookOpen, ClipboardCheck, Activity, CheckCircle2, Footprints, Award,
-  Pencil, Plus, Circle, CheckCircle, FileClock, Trash2, ShieldAlert,
+  Plus, ShieldAlert, CalendarClock, Settings2, PenSquare,
 } from 'lucide-react';
 import { useSession } from '../hooks/useApp';
 import { useDataset } from '../hooks/useData';
 import { db } from '../db/database';
-import { lessonsRepo, settingsRepo } from '../db/repositories';
+import { settingsRepo } from '../db/repositories';
 import { computeMetrics, periodRange, timeSeries, type Ratio } from '../analytics/engine';
-import { Badge, Button, Card, EmptyState, IconButton, PageSkeleton, StatCard } from '../components/ui';
+import { Badge, Button, Card, EmptyState, PageSkeleton, StatCard } from '../components/ui';
 import { TrendChart, DonutChart, SERIES } from '../components/charts';
 import { LessonModal } from '../components/shared/LessonModal';
-import { useConfirm, useToast } from '../components/ui/feedback';
+import { DayEditor, DayLessons, LessonActions, lessonHref } from '../components/schedule';
+import { useDaySchedule } from '../schedule/useSchedule';
+import type { ResolvedLesson } from '../schedule/scheduleEngine';
 import { SUPPORT_LEVELS, labelOf } from '../lib/catalog';
 import { fmtDate, fmtPct, todayISO, cn } from '../lib/utils';
-import type { Lesson } from '../types/models';
 
 const greeting = () => {
   const h = new Date().getHours();
@@ -25,47 +26,33 @@ const greeting = () => {
 const ratioHint = (r: Ratio, what: string) => (r.den ? `${r.num} з ${r.den} ${what}${r.lowData ? ' · мало даних' : ''}` : 'немає оцінених записів');
 
 export default function Dashboard() {
-  const { user, student, subjectName, subjectColor, mode } = useSession();
+  const { user, student, mode } = useSession();
   const nav = useNavigate();
-  const confirm = useConfirm();
-  const toast = useToast();
   const today = todayISO();
   const week = useMemo(() => periodRange('last7'), []);
   const month = useMemo(() => periodRange('last30'), []);
   const curWeek = useMemo(() => periodRange('week'), []);
   const ds7 = useDataset(student!.id, week);
   const ds30 = useDataset(student!.id, month);
-  const [lessonModal, setLessonModal] = useState<{ open: boolean; lesson?: Lesson | null }>({ open: false });
-
-  const todayData = useLiveQuery(async () => {
-    const [lessons, obs] = await Promise.all([
-      lessonsRepo.listForDate(student!.id, today),
-      db.observations.where('[studentId+date]').equals([student!.id, today]).toArray(),
-    ]);
-    return { lessons, obs };
-  }, [student!.id, today]);
+  const [lessonModal, setLessonModal] = useState(false);
+  const [dayEditor, setDayEditor] = useState(false);
+  const [activeLesson, setActiveLesson] = useState<ResolvedLesson | null>(null);
+  // Today's lessons come from the Smart Schedule engine (template + exceptions + observations).
+  const todayDay = useDaySchedule(student!.id, today);
   const appSettings = useLiveQuery(() => settingsRepo.getUser(user.id), [user.id]);
   const achievementsRecent = useLiveQuery(() => db.achievements.where('studentId').equals(student!.id).reverse().sortBy('date').then((a) => a.slice(0, 4)), [student!.id]);
 
-  if (!ds7 || !ds30 || !todayData) return <PageSkeleton />;
+  if (!ds7 || !ds30 || !todayDay) return <PageSkeleton />;
 
   const m7 = computeMetrics(ds7);
   const m30 = computeMetrics(ds30);
   const weekAchievements = ds30.achievements.filter((a) => a.date >= curWeek.from && a.date <= curWeek.to).length;
   const series7 = timeSeries(ds7, week, 'day');
   const series30 = timeSeries(ds30, month, 'week');
-  const todayFinal = todayData.obs.filter((o) => o.status === 'final');
-
-  // Merge planned lessons and today's observations into one list
-  const rows = todayData.lessons.map((l) => {
-    const o = todayData.obs.find((x) => x.lessonId === l.id) ?? todayData.obs.find((x) => !x.lessonId && x.lessonNumber === l.number && x.subjectId === l.subjectId);
-    return { key: l.id, lesson: l, obs: o, number: l.number, subjectId: l.subjectId, topic: l.topic || o?.topic || '' };
-  });
-  for (const o of todayData.obs) {
-    if (!rows.some((r) => r.obs?.id === o.id)) rows.push({ key: o.id, lesson: undefined as any, obs: o, number: o.lessonNumber ?? 0, subjectId: o.subjectId, topic: o.topic });
-  }
-  rows.sort((a, b) => a.number - b.number);
-  const nextNumber = Math.max(0, ...rows.map((r) => r.number)) + 1;
+  const todayLessons = todayDay.lessons.filter((l) => !l.cancelled);
+  const todayFilled = todayLessons.filter((l) => l.status === 'filled').length;
+  const nextToFill = todayLessons.find((l) => !l.observation && l.status !== 'skipped');
+  const nextNumber = Math.max(0, ...todayDay.lessons.map((l) => l.number ?? 0)) + 1;
 
   const supportDonut = SUPPORT_LEVELS.filter((s) => m30.supportCounts.get(s.key)).map((s, i) => ({ name: s.label, value: m30.supportCounts.get(s.key)!, color: SERIES[SUPPORT_LEVELS.indexOf(s) % 8] ?? SERIES[i] }));
   const backupOld = !appSettings?.lastBackupAt || Date.now() - appSettings.lastBackupAt > 14 * 864e5;
@@ -106,8 +93,8 @@ export default function Dashboard() {
 
       {/* KPI */}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-6">
-        <StatCard label="Уроків сьогодні" value={rows.length} icon={<BookOpen className="h-4 w-4" />} hint="у розкладі та записах" />
-        <StatCard label="Заповнено" value={`${todayFinal.length}/${Math.max(rows.length, todayFinal.length)}`} icon={<ClipboardCheck className="h-4 w-4" />} tone="mint" hint="спостережень сьогодні" />
+        <StatCard label="Уроків сьогодні" value={todayLessons.length} icon={<BookOpen className="h-4 w-4" />} hint={todayDay.period ? 'за розкладом' : 'розклад не налаштовано'} />
+        <StatCard label="Заповнено" value={todayLessons.length ? `${todayFilled}/${todayLessons.length}` : '—'} icon={<ClipboardCheck className="h-4 w-4" />} tone="mint" hint="спостережень сьогодні" />
         <StatCard label="Залученість" value={fmtPct(m7.engagement.pct)} icon={<Activity className="h-4 w-4" />} hint={ratioHint(m7.engagement, 'уроків, 7 дн.')} lowData={m7.engagement.lowData && m7.engagement.den > 0} />
         <StatCard label="Завершення" value={fmtPct(m7.completion.pct)} icon={<CheckCircle2 className="h-4 w-4" />} tone="mint" hint={ratioHint(m7.completion, 'завдань, 7 дн.')} lowData={m7.completion.lowData && m7.completion.den > 0} />
         <StatCard label="Самостійність" value={fmtPct(m7.independence.pct)} icon={<Footprints className="h-4 w-4" />} tone="sun" hint={ratioHint(m7.independence, 'завдань, 7 дн.')} lowData={m7.independence.lowData && m7.independence.den > 0} />
@@ -115,45 +102,22 @@ export default function Dashboard() {
       </div>
 
       <div className="grid gap-5 lg:grid-cols-3 [&>*]:min-w-0">
-        {/* Today's lessons */}
-        <Card className="lg:col-span-2" title="Сьогоднішні уроки" subtitle={fmtDate(today)}
-          action={<Button size="sm" variant="soft" icon={<Plus className="h-4 w-4" />} onClick={() => setLessonModal({ open: true, lesson: null })}>Додати урок</Button>}>
-          {rows.length === 0 ? (
-            <EmptyState icon={<BookOpen className="h-7 w-7" />} title="На сьогодні уроків немає" text="Додайте урок до розкладу або одразу створіть спостереження."
-              action={<Button onClick={() => nav('/observation/new')}>Створити спостереження</Button>} />
-          ) : (
-            <ul className="divide-y divide-line">
-              {rows.map((r) => {
-                const status = !r.obs ? 'empty' : r.obs.status === 'draft' ? 'draft' : 'done';
-                return (
-                  <li key={r.key} className="flex items-center gap-3 py-3">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-extrabold text-ink" style={{ background: subjectColor(r.subjectId) + '40' }}>{r.number || '—'}</span>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate font-semibold">{subjectName(r.subjectId)}</div>
-                      <div className="truncate text-xs text-muted">{r.topic || 'Тему не вказано'}</div>
-                    </div>
-                    <span className={cn('hidden items-center gap-1 text-xs font-semibold sm:inline-flex', status === 'done' ? 'text-mint-dark dark:text-mint' : status === 'draft' ? 'text-sun-dark' : 'text-muted')}>
-                      {status === 'done' ? <CheckCircle className="h-4 w-4" /> : status === 'draft' ? <FileClock className="h-4 w-4" /> : <Circle className="h-4 w-4" />}
-                      {status === 'done' ? 'Заповнено' : status === 'draft' ? 'Чернетка' : 'Не заповнено'}
-                    </span>
-                    {r.obs ? (
-                      <Button size="sm" variant="secondary" icon={<Pencil className="h-3.5 w-3.5" />} onClick={() => nav(`/observation/${r.obs!.id}/edit`)}>Редагувати</Button>
-                    ) : (
-                      <Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => nav(`/observation/new?lesson=${r.lesson.id}`)}>Заповнити</Button>
-                    )}
-                    {r.lesson && !r.obs && (
-                      <IconButton label="Видалити урок з розкладу" onClick={async () => {
-                        if (await confirm({ title: 'Видалити урок з розкладу?', text: 'Спостережень для цього уроку немає.', danger: true, confirmLabel: 'Видалити' })) {
-                          await lessonsRepo.remove(r.lesson.id);
-                          toast('Урок видалено');
-                        }
-                      }}><Trash2 className="h-4 w-4" /></IconButton>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+        {/* Today's lessons (Smart Schedule) */}
+        <Card className="lg:col-span-2" title="Уроки сьогодні"
+          subtitle={<span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            {todayDay.period ? <Badge tone="blue"><CalendarClock className="h-3 w-3" />{todayDay.period.name}</Badge> : <Badge tone="gray">Розклад не налаштовано</Badge>}
+            <span className="capitalize">{fmtDate(today, 'EEEE, d MMMM')}</span>
+            {todayLessons.length > 0 && <span>· {todayLessons.length} уроків · заповнено {todayFilled}</span>}
+          </span>}
+          action={<Link to="/schedule" className="hidden text-sm font-semibold text-primary hover:underline sm:inline">Переглянути розклад</Link>}>
+          <DayLessons day={todayDay} />
+          <div className="mt-3 flex flex-wrap gap-2 border-t border-line pt-3">
+            {nextToFill && <Button size="sm" icon={<PenSquare className="h-4 w-4" />} onClick={() => nav(lessonHref(nextToFill))}>Заповнити журнал</Button>}
+            {todayDay.period
+              ? <Button size="sm" variant="secondary" icon={<Settings2 className="h-4 w-4" />} onClick={() => setDayEditor(true)}>Змінити уроки на сьогодні</Button>
+              : <Button size="sm" variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={() => setLessonModal(true)}>Додати урок</Button>}
+            <Button size="sm" variant="ghost" icon={<CalendarClock className="h-4 w-4" />} onClick={() => nav('/schedule')}>Переглянути розклад</Button>
+          </div>
         </Card>
 
         {/* Quick actions */}
@@ -202,7 +166,9 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      <LessonModal open={lessonModal.open} lesson={lessonModal.lesson} date={today} nextNumber={nextNumber} onClose={() => setLessonModal({ open: false })} />
+      <LessonModal open={lessonModal} lesson={null} date={today} nextNumber={nextNumber} onClose={() => setLessonModal(false)} />
+      <DayEditor day={dayEditor ? todayDay : null} onClose={() => setDayEditor(false)} onOpenLesson={(l) => { setDayEditor(false); setActiveLesson(l); }} />
+      <LessonActions lesson={activeLesson} day={todayDay} onClose={() => setActiveLesson(null)} />
     </div>
   );
 }

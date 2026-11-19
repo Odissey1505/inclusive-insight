@@ -1,12 +1,12 @@
 import Dexie, { type Table } from 'dexie';
 import type {
   UserProfile, Student, Subject, Lesson, Observation, Task, ObsEvent, Strategy, StrategyUse,
-  IEPGoal, IEPMeasurement, Achievement, Template, Settings, Draft,
+  IEPGoal, IEPMeasurement, Achievement, Template, Settings, Draft, SchedulePeriod, ScheduleSlot, ScheduleOverride,
 } from '../types/models';
 import type { OutboxEntry, VersionEntry, ConflictEntry } from '../cloud/types';
 
 export const DB_NAME = 'inclusive-insight';
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 /**
  * Local IndexedDB storage. The repositories in ./repositories.ts are the only
@@ -31,6 +31,10 @@ export class InsightDB extends Dexie {
   drafts!: Table<Draft, string>;
   // Cloud sync bookkeeping (1.1). Never part of backups or analytics.
   outbox!: Table<OutboxEntry, number>;
+  // Smart Schedule (1.2)
+  schedulePeriods!: Table<SchedulePeriod, string>;
+  scheduleSlots!: Table<ScheduleSlot, string>;
+  scheduleOverrides!: Table<ScheduleOverride, string>;
   versions!: Table<VersionEntry, string>;
   conflicts!: Table<ConflictEntry, string>;
 
@@ -72,6 +76,13 @@ export class InsightDB extends Dexie {
       outbox: '++seq, uid, key, state',
       versions: 'key, uid',
       conflicts: 'key, uid',
+    });
+    // v4 — Inclusive Insight 1.2: Smart Schedule (weekly template + period + exceptions).
+    // New tables only; existing records are untouched.
+    this.version(4).stores({
+      schedulePeriods: 'id, ownerId, studentId',
+      scheduleSlots: 'id, ownerId, studentId, periodId',
+      scheduleOverrides: 'id, ownerId, studentId, periodId, [studentId+date], date',
     });
   }
 }

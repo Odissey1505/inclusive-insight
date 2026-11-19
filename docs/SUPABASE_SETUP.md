@@ -10,12 +10,16 @@
 ## 1. Створіть таблиці та правила безпеки (SQL)
 
 1. Supabase Dashboard → ваш проєкт → **SQL Editor** → **New query**.
-2. Вставте весь вміст файлу `supabase/migrations/20261118000000_inclusive_insight_1_1.sql` і натисніть **Run**.
+2. Виконайте по черзі обидва файли з папки `supabase/migrations` (вставте вміст і натисніть **Run**):
+   1. `20261118000000_inclusive_insight_1_1.sql` — основні таблиці, версії, RLS (1.1);
+   2. `20261119000000_inclusive_insight_1_2_smart_schedule.sql` — розклад (1.2).
+
+   Якщо 1.1 уже виконано, достатньо виконати лише файл 1.2.
 3. Переконайтеся, що з'явилися таблиці (**Table Editor**):
-   `ii_profiles, ii_students, ii_subjects, ii_strategies, ii_templates, ii_lessons, ii_observations, ii_observation_tasks, ii_observation_events, ii_strategy_uses, ii_iep_goals, ii_iep_measurements, ii_achievements`.
+   `ii_profiles, ii_students, ii_subjects, ii_strategies, ii_templates, ii_lessons, ii_observations, ii_observation_tasks, ii_observation_events, ii_strategy_uses, ii_iep_goals, ii_iep_measurements, ii_achievements` і (1.2) `ii_schedule_periods, ii_schedule_templates, ii_schedule_overrides`.
    Біля кожної має стояти позначка **RLS enabled**.
 
-Міграцію можна запускати повторно: вона нічого не дублює й не видаляє.
+Обидві міграції можна запускати повторно: вони нічого не дублюють і не видаляють, а сторонніх таблиць не змінюють.
 
 Якщо ви користуєтеся Supabase CLI, файл уже лежить у стандартній папці: `supabase db push`.
 

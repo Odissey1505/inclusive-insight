@@ -4,7 +4,9 @@ import { OWNER_TABLES, subjectsRepo, strategiesRepo, bootstrapOwner, settingsRep
 import { uid } from '../lib/utils';
 import type {
   Student, Observation, Task, ObsEvent, StrategyUse, IEPGoal, IEPMeasurement, Achievement, Lesson, ID, Subject,
+  SchedulePeriod, ScheduleSlot,
 } from '../types/models';
+import { autoTimes } from '../schedule/scheduleEngine';
 
 /** Small deterministic PRNG so demo data is the same on every device. */
 function rng(seed: number) {
@@ -246,8 +248,22 @@ export async function createDemo(ownerId: ID, weeks = 7): Promise<Student> {
     goalId: goalIdx !== undefined ? goals[goalIdx as number].id : undefined, includeInReports: true,
   }) as Achievement);
 
-  await db.transaction('rw', [db.students, db.lessons, db.observations, db.tasks, db.events, db.strategyUses, db.iepGoals, db.iepMeasurements, db.achievements], async () => {
+  // Smart Schedule for the demo student: the same weekly plan the demo lessons were generated from.
+  const times = autoTimes('08:30', 6, 35, 10);
+  const demoPeriod: SchedulePeriod = base({
+    studentId: student.id, name: 'Демо-розклад', academicYear: student.schoolYear,
+    startDate: format(start, 'yyyy-MM-dd'), endDate: format(addDays(today, 120), 'yyyy-MM-dd'),
+    weekdays: [1, 2, 3, 4, 5], description: 'Демонстраційний тижневий розклад', archived: false, basedOnId: null,
+  }) as SchedulePeriod;
+  const demoSlots: ScheduleSlot[] = schedule.flatMap((plan, wdIdx) => plan.map((key, i) => base({
+    studentId: student.id, periodId: demoPeriod.id, weekday: wdIdx + 1, lessonNumber: i + 1, subjectId: byKey(key).id,
+    startTime: times[i].startTime, endTime: times[i].endTime, notes: '', effectiveFrom: null, effectiveTo: null,
+  }) as ScheduleSlot));
+
+  await db.transaction('rw', [db.students, db.lessons, db.observations, db.tasks, db.events, db.strategyUses, db.iepGoals, db.iepMeasurements, db.achievements, db.schedulePeriods, db.scheduleSlots], async () => {
     await db.students.add(student);
+    await db.schedulePeriods.add(demoPeriod);
+    await db.scheduleSlots.bulkAdd(demoSlots);
     await db.lessons.bulkAdd(lessons);
     await db.observations.bulkAdd(observations);
     await db.tasks.bulkAdd(tasks);

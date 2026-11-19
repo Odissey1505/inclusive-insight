@@ -10,6 +10,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isUuid = (v: unknown): v is string => typeof v === 'string' && UUID.test(v);
 const ref = (v: unknown) => (isUuid(v) ? v : null);
 const day = (v: unknown) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '1970-01-01');
+const dayOrNull = (v: unknown) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
+const time = (v: unknown) => (typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v) ? v : null);
 
 type Row = Record<string, any>;
 
@@ -40,6 +42,25 @@ export const TABLE_SPECS: TableSpec[] = [
   {
     local: 'iepMeasurements', remote: 'ii_iep_measurements',
     columns: (r) => ({ student_id: r.studentId, goal_id: r.goalId, observation_id: ref(r.observationId), date: day(r.date) }),
+  },
+  // 1.2 Smart Schedule
+  {
+    local: 'schedulePeriods', remote: 'ii_schedule_periods',
+    columns: (r) => ({ student_id: r.studentId, start_date: day(r.startDate), end_date: day(r.endDate), archived: !!r.archived }),
+  },
+  {
+    local: 'scheduleSlots', remote: 'ii_schedule_templates',
+    columns: (r) => ({
+      student_id: r.studentId, period_id: r.periodId, weekday: r.weekday, lesson_number: r.lessonNumber, subject_id: ref(r.subjectId),
+      start_time: time(r.startTime), end_time: time(r.endTime), effective_from: dayOrNull(r.effectiveFrom), effective_to: dayOrNull(r.effectiveTo),
+    }),
+  },
+  {
+    local: 'scheduleOverrides', remote: 'ii_schedule_overrides',
+    columns: (r) => ({
+      student_id: r.studentId, period_id: r.periodId, date: day(r.date), override_type: r.type, template_id: ref(r.slotId), subject_id: ref(r.subjectId),
+      lesson_number: typeof r.lessonNumber === 'number' ? r.lessonNumber : null, start_time: time(r.startTime), end_time: time(r.endTime),
+    }),
   },
   {
     local: 'achievements', remote: 'ii_achievements',

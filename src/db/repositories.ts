@@ -26,11 +26,12 @@ function stamp<T extends object>(ownerId: ID, data: T, existing?: { id: string; 
 export const OWNER_TABLES = [
   'students', 'subjects', 'lessons', 'observations', 'tasks', 'events', 'strategies',
   'strategyUses', 'iepGoals', 'iepMeasurements', 'achievements', 'templates',
+  'schedulePeriods', 'scheduleSlots', 'scheduleOverrides',
 ] as const;
 export type OwnerTable = (typeof OWNER_TABLES)[number];
 
 /** Tables that hold per-student data. */
-const STUDENT_TABLES = ['lessons', 'observations', 'tasks', 'events', 'strategyUses', 'iepGoals', 'iepMeasurements', 'achievements'] as const;
+const STUDENT_TABLES = ['lessons', 'observations', 'tasks', 'events', 'strategyUses', 'iepGoals', 'iepMeasurements', 'achievements', 'scheduleOverrides', 'scheduleSlots', 'schedulePeriods'] as const;
 
 /* ------------------------------------------------------------------ */
 /* Users (local workspaces — NOT authentication)                       */
@@ -287,8 +288,9 @@ export const observationsRepo = {
         const isDemo = existing?.isDemo ?? (await db.students.get(obsData.studentId))?.isDemo;
         const obs = stamp(ownerId, { ...obsData, isDemo }, existing) as Observation;
 
-        // Link or create the lesson slot for (date, number, subject)
-        if (obs.status === 'final' && obs.lessonNumber) {
+        // Link or create the lesson slot for (date, number, subject).
+        // 1.2: lessons that come from the Smart Schedule need no separate lesson record.
+        if (obs.status === 'final' && obs.lessonNumber && !obs.scheduleKey) {
           const sameDay = await db.lessons.where('[studentId+date]').equals([obs.studentId, obs.date]).toArray();
           let lesson = sameDay.find((l) => l.id === obs.lessonId) ?? sameDay.find((l) => l.number === obs.lessonNumber);
           if (lesson) {

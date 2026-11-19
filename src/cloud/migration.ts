@@ -27,6 +27,7 @@ export const TABLE_LABELS: Record<OwnerTable, string> = {
   students: 'Учні', subjects: 'Предмети', lessons: 'Уроки', observations: 'Спостереження', tasks: 'Завдання',
   events: 'Події', strategies: 'Стратегії', strategyUses: 'Застосування стратегій', iepGoals: 'Цілі ІПР',
   iepMeasurements: 'Вимірювання ІПР', achievements: 'Досягнення', templates: 'Шаблони',
+  schedulePeriods: 'Розклади', scheduleSlots: 'Уроки розкладу', scheduleOverrides: 'Зміни розкладу',
 };
 
 /** Local (non-cloud) workspaces that still hold records. */
@@ -65,7 +66,7 @@ export interface ImportResult {
   idMap: Map<string, string>;
 }
 
-const ORDER: OwnerTable[] = ['students', 'subjects', 'strategies', 'templates', 'lessons', 'observations', 'tasks', 'events', 'strategyUses', 'iepGoals', 'iepMeasurements', 'achievements'];
+const ORDER: OwnerTable[] = ['students', 'subjects', 'strategies', 'templates', 'schedulePeriods', 'scheduleSlots', 'scheduleOverrides', 'lessons', 'observations', 'tasks', 'events', 'strategyUses', 'iepGoals', 'iepMeasurements', 'achievements'];
 
 /** Copies a local workspace into the cloud account (the sync engine uploads the copies). */
 export async function importLegacyProfile(fromOwner: string, toUid: string, opts: { includeDemo: boolean }): Promise<ImportResult> {
@@ -100,7 +101,11 @@ export async function importLegacyProfile(fromOwner: string, toUid: string, opts
   const remap = (t: OwnerTable, r: any) => {
     const x: any = { ...r, id: map.get(r.id), ownerId: toUid };
     delete x.isDemo;
-    for (const f of ['studentId', 'subjectId', 'lessonId', 'observationId', 'goalId', 'strategyId']) if (f in x && x[f]) x[f] = m(x[f]);
+    for (const f of ['studentId', 'subjectId', 'lessonId', 'observationId', 'goalId', 'strategyId', 'periodId', 'slotId', 'basedOnId']) if (f in x && x[f]) x[f] = m(x[f]);
+    if (typeof x.scheduleKey === 'string') {
+      const [kind, ref] = x.scheduleKey.split(':');
+      x.scheduleKey = `${kind}:${m(ref)}`;
+    }
     if (Array.isArray(x.strategyIds)) x.strategyIds = x.strategyIds.map(m);
     if (Array.isArray(x.linkedObservationIds)) x.linkedObservationIds = x.linkedObservationIds.map(m);
     if (t === 'templates') x.key = m(x.key);

@@ -16,6 +16,7 @@ import { BEHAVIORS, ENGAGEMENT, EVENT_TYPES, SUPPORT_LEVELS, TASK_TYPES, labelOf
 import { Badge, Card, EmptyState, Input, PageHeader, PageSkeleton, Segmented, Select, StatCard } from '../components/ui';
 import { BarsChart, DataTable, DonutChart, LegendRow, SERIES, StackedChart, TrendChart } from '../components/charts';
 import { cn, fmtDate, fmtPct } from '../lib/utils';
+import { JournalKeeping } from '../components/schedule/JournalKeeping';
 
 const hint = (r: Ratio, what: string) => (r.den ? `${r.num} з ${r.den} ${what}${r.lowData ? ' · мало даних' : ''}` : 'не оцінювалося');
 
@@ -131,6 +132,9 @@ export default function Analytics() {
               ))}
             </ul>
           </Card>
+
+          {/* Smart Schedule: administrative journal-keeping indicators (separate from learning metrics) */}
+          <JournalKeeping studentId={student!.id} from={range.from} to={range.to} />
 
           <div className="grid gap-5 xl:grid-cols-2">
             <Card title="Динаміка навчальної участі" subtitle={`${rangeLen > 31 ? 'За тижнями' : 'За днями'} · порожні проміжки = немає даних (не нуль). Клік по точці відкриває записи.`}>

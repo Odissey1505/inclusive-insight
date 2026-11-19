@@ -5,17 +5,18 @@ import {
   addDays, addMonths, addWeeks, eachDayOfInterval, endOfMonth, endOfWeek, format, isSameMonth, parseISO, startOfMonth, startOfWeek,
 } from 'date-fns';
 import { uk } from 'date-fns/locale';
-import { CalendarDays, ChevronLeft, ChevronRight, Plus, BarChart3, Pencil, Eye, Circle, CheckCircle, FileClock } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, Plus, BarChart3, Circle, CalendarOff, Settings2, Ban, Sparkles, PenLine } from 'lucide-react';
+import { DayEditor, DayLessons, LessonActions } from '../components/schedule';
+import { useScheduleRange } from '../schedule/useSchedule';
+import type { DaySchedule, ResolvedLesson } from '../schedule/scheduleEngine';
 import { useSession } from '../hooks/useApp';
 import { useDataset } from '../hooks/useData';
 import { lessonsRepo } from '../db/repositories';
-import { db } from '../db/database';
 import { applyFilters, heatmap, HEAT_METRICS, type HeatMetric } from '../analytics/engine';
 import { Badge, Button, Card, EmptyState, IconButton, PageHeader, PageSkeleton, Segmented, Select } from '../components/ui';
 import { LessonModal } from '../components/shared/LessonModal';
 import { cn, fmtDate, todayISO, toISO } from '../lib/utils';
-import { labelOf } from '../lib/catalog';
-import type { Lesson, Observation } from '../types/models';
+import type { Lesson } from '../types/models';
 
 type View = 'day' | 'week' | 'month';
 
@@ -28,6 +29,8 @@ export default function CalendarPage() {
   const [metric, setMetric] = useState<HeatMetric>('records');
   const [subjectId, setSubjectId] = useState('');
   const [lessonModal, setLessonModal] = useState<{ open: boolean; lesson?: Lesson | null; date: string }>({ open: false, date: todayISO() });
+  const [active, setActive] = useState<{ lesson: ResolvedLesson; day: DaySchedule } | null>(null);
+  const [editDay, setEditDay] = useState<string | null>(null);
 
   const c = parseISO(cursor);
   const range = useMemo(() => {
@@ -37,11 +40,12 @@ export default function CalendarPage() {
   }, [view, cursor]); // eslint-disable-line
   const ds = useDataset(student!.id, range);
   const lessons = useLiveQuery(() => lessonsRepo.listRange(student!.id, range.from, range.to), [student!.id, range.from, range.to]);
-  const drafts = useLiveQuery(() => db.observations.where('[studentId+date]').between([student!.id, range.from], [student!.id, range.to], true, true).filter((o) => o.status === 'draft').toArray(), [student!.id, range.from, range.to]);
+  // Lessons of each date: Smart Schedule (template + exceptions) + manual lessons + observations.
+  const sched = useScheduleRange(student!.id, range.from, range.to);
 
   const filtered = useMemo(() => (ds ? applyFilters(ds, { subjectIds: subjectId ? [subjectId] : [] }) : null), [ds, subjectId]);
   const heat = useMemo(() => (filtered ? heatmap(filtered, metric) : new Map()), [filtered, metric]);
-  if (!filtered || !lessons || !drafts) return <PageSkeleton />;
+  if (!filtered || !lessons || !sched) return <PageSkeleton />;
 
   const metaDef = HEAT_METRICS.find((m) => m.key === metric)!;
   const maxCount = Math.max(1, ...[...heat.values()].map((v) => v.value));
@@ -49,14 +53,13 @@ export default function CalendarPage() {
     const t = metaDef.isPct ? v / 100 : v / maxCount;
     return Math.min(6, Math.max(1, Math.ceil(t * 6)));
   };
-  const allObs: Observation[] = [...filtered.observations, ...drafts.filter((d) => !subjectId || d.subjectId === subjectId)];
-  const dayItems = (d: string) => {
-    const obs = allObs.filter((o) => o.date === d);
-    const ls = lessons.filter((l) => l.date === d && (!subjectId || l.subjectId === subjectId));
-    const rows = ls.map((l) => ({ key: l.id, number: l.number, subjectId: l.subjectId, topic: l.topic, lesson: l as Lesson | undefined, obs: obs.find((o) => o.lessonId === l.id) }));
-    for (const o of obs) if (!rows.some((r) => r.obs?.id === o.id)) rows.push({ key: o.id, number: o.lessonNumber ?? 0, subjectId: o.subjectId, topic: o.topic, lesson: undefined, obs: o });
-    return rows.sort((a, b) => a.number - b.number);
+  const dayOf = (d: string): DaySchedule => sched.find((x) => x.date === d) ?? { date: d, weekday: 1, period: null, state: 'no-period', dayOverride: null, lessons: [] };
+  const dayItems = (d: string) => (subjectId ? dayOf(d).lessons.filter((l) => l.subjectId === subjectId) : dayOf(d).lessons);
+  const countOf = (d: string) => {
+    const ls = dayItems(d).filter((l) => !l.cancelled);
+    return { done: ls.filter((l) => l.status === 'filled').length, total: ls.length };
   };
+  const hasChanges = (d: string) => dayItems(d).some((l) => l.kind === 'changed' || l.kind === 'extra' || l.kind === 'cancelled');
 
   const shift = (dir: 1 | -1) => {
     const n = view === 'month' ? addMonths(c, dir) : view === 'week' ? addWeeks(c, dir) : addDays(c, dir);
@@ -66,41 +69,23 @@ export default function CalendarPage() {
   const title = view === 'month' ? format(c, 'LLLL yyyy', { locale: uk }) : view === 'week' ? `${fmtDate(range.from, 'd MMM')} — ${fmtDate(range.to, 'd MMM yyyy')}` : fmtDate(cursor, 'EEEE, d MMMM yyyy');
 
   const DayPanel = ({ d }: { d: string }) => {
-    const items = dayItems(d);
+    const day = dayOf(d);
+    const shown = { ...day, lessons: dayItems(d) };
     return (
       <div>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h3 className="font-bold capitalize">{fmtDate(d, 'EEEE, d MMMM')}</h3>
+          <div>
+            <h3 className="font-bold capitalize">{fmtDate(d, 'EEEE, d MMMM')}</h3>
+            {day.period && <p className="text-xs text-muted">{day.period.name}</p>}
+          </div>
           <div className="flex gap-2">
-            <Button size="sm" variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={() => setLessonModal({ open: true, lesson: null, date: d })}>Урок</Button>
+            {day.period
+              ? <Button size="sm" variant="secondary" icon={<Settings2 className="h-4 w-4" />} onClick={() => setEditDay(d)}>Змінити день</Button>
+              : <Button size="sm" variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={() => setLessonModal({ open: true, lesson: null, date: d })}>Урок</Button>}
             <Button size="sm" icon={<Plus className="h-4 w-4" />} onClick={() => nav(`/observation/new?date=${d}`)}>Запис</Button>
           </div>
         </div>
-        {items.length === 0 ? <p className="rounded-xl bg-bg p-4 text-center text-sm text-muted">Записів за цей день немає.</p> : (
-          <ul className="space-y-2">
-            {items.map((r) => (
-              <li key={r.key} className="flex items-center gap-3 rounded-xl border border-line p-2.5">
-                <span className="h-9 w-1.5 shrink-0 rounded-full" style={{ background: subjectColor(r.subjectId) }} />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-semibold">{r.number ? `${r.number}. ` : ''}{subjectName(r.subjectId)}</div>
-                  <div className="truncate text-xs text-muted">{r.topic || (r.obs ? labelOf('engagement', r.obs.engagement) : 'Не заповнено')}</div>
-                </div>
-                {!r.obs ? <Circle className="h-4 w-4 text-muted" aria-label="Не заповнено" /> : r.obs.status === 'draft' ? <FileClock className="h-4 w-4 text-sun-dark" aria-label="Чернетка" /> : <CheckCircle className="h-4 w-4 text-mint-dark" aria-label="Заповнено" />}
-                {r.obs ? (
-                  <>
-                    <IconButton label="Переглянути" onClick={() => nav(`/journal/${r.obs!.id}`)}><Eye className="h-4 w-4" /></IconButton>
-                    <IconButton label="Редагувати" onClick={() => nav(`/observation/${r.obs!.id}/edit`)}><Pencil className="h-4 w-4" /></IconButton>
-                  </>
-                ) : (
-                  <>
-                    <IconButton label="Редагувати урок" onClick={() => setLessonModal({ open: true, lesson: r.lesson, date: d })}><Pencil className="h-4 w-4" /></IconButton>
-                    <Button size="sm" onClick={() => nav(`/observation/new?lesson=${r.lesson!.id}`)}>Заповнити</Button>
-                  </>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
+        <DayLessons day={shown} compact />
       </div>
     );
   };
@@ -158,7 +143,6 @@ export default function CalendarPage() {
             <div className="grid grid-cols-7 gap-1 sm:gap-2">
               {eachDayOfInterval({ start: parseISO(range.from), end: parseISO(range.to) }).map((day) => {
                 const d = toISO(day);
-                const items = dayItems(d);
                 const h = heat.get(d);
                 const dark = cellTextDark(d);
                 return (
@@ -168,12 +152,15 @@ export default function CalendarPage() {
                       !isSameMonth(day, c) && 'opacity-40', selected === d ? 'border-primary ring-2 ring-primary/30' : h ? 'border-transparent' : 'border-dashed border-line bg-bg/50')}
                     style={cellStyle(d)}>
                     <span className={cn('text-xs font-bold sm:text-sm', d === todayISO() && 'rounded-md bg-ink px-1 text-card', dark && d !== todayISO() && 'seq-on-high')}>{day.getDate()}</span>
-                    {items.length > 0 && <span className={cn('text-[10px] font-semibold sm:text-xs', dark ? 'seq-on-high' : 'text-ink')}>{items.filter((i) => i.obs?.status === 'final').length}/{items.length}</span>}
+                    <span className={cn('flex w-full items-center justify-between gap-1 text-[10px] font-semibold sm:text-xs', dark ? 'seq-on-high' : 'text-ink')}>
+                      {dayOf(d).state === 'day-off' ? <CalendarOff className="h-3.5 w-3.5 opacity-70" aria-label="День без занять" /> : countOf(d).total > 0 ? <span>{countOf(d).done}/{countOf(d).total}</span> : <span />}
+                      {hasChanges(d) && <span className="h-2 w-2 rounded-full bg-sun-dark" title="Є зміни розкладу" />}
+                    </span>
                   </button>
                 );
               })}
             </div>
-            <p className="mt-2 px-1 text-xs text-muted">Число в клітинці — заповнено / усього уроків. Подвійний клік відкриває день. Кольори показують величину показника, а не оцінку дня.</p>
+            <p className="mt-2 px-1 text-xs text-muted">Число в клітинці — заповнено / уроків за розкладом; жовта крапка — є зміни розкладу; <CalendarOff className="inline h-3 w-3" /> — день без занять. Подвійний клік відкриває день. Кольори показують величину показника, а не оцінку дня.</p>
           </Card>
           <Card><DayPanel d={selected} /></Card>
         </div>
@@ -192,12 +179,14 @@ export default function CalendarPage() {
                   {h && <span className="rounded-md px-1.5 text-[11px] font-bold" style={{ background: `var(--seq-${level(h.value)})`, color: level(h.value) >= 4 ? 'var(--seq-on-high)' : undefined }}>{h.value}{metaDef.isPct ? '%' : ''}</span>}
                 </button>
                 <div className="flex-1 space-y-1.5">
+                  {dayOf(d).state === 'day-off' && <p className="rounded-lg bg-bg px-2 py-1.5 text-xs text-muted"><CalendarOff className="mr-1 inline h-3 w-3" />без занять</p>}
                   {items.map((r) => (
-                    <button key={r.key} onClick={() => (r.obs ? nav(`/journal/${r.obs.id}`) : nav(`/observation/new?lesson=${r.lesson!.id}`))}
-                      className="flex w-full items-center gap-1.5 rounded-lg bg-bg px-2 py-1.5 text-left text-xs hover:bg-primary-soft">
+                    <button key={r.key} onClick={() => setActive({ lesson: r, day: dayOf(d) })} title={r.kind === 'regular' ? undefined : r.kind === 'changed' ? 'Змінений урок' : r.kind === 'cancelled' ? 'Скасований урок' : r.kind === 'extra' ? 'Додатковий урок' : undefined}
+                      className={cn('flex w-full items-center gap-1.5 rounded-lg bg-bg px-2 py-1.5 text-left text-xs hover:bg-primary-soft', r.cancelled && 'opacity-60')}>
                       <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: subjectColor(r.subjectId) }} />
-                      <span className="flex-1 truncate">{r.number ? `${r.number}. ` : ''}{subjectName(r.subjectId)}</span>
-                      {r.obs?.status === 'draft' ? <Badge tone="sun">ч</Badge> : !r.obs && <Circle className="h-3 w-3 text-muted" />}
+                      <span className={cn('flex-1 truncate', r.cancelled && 'line-through')}>{r.number ? `${r.number}. ` : ''}{subjectName(r.subjectId)}</span>
+                      {r.kind === 'cancelled' ? <Ban className="h-3 w-3 text-coral-dark" /> : r.kind === 'extra' ? <Sparkles className="h-3 w-3 text-mint-dark" /> : r.kind === 'changed' ? <PenLine className="h-3 w-3 text-sun-dark" /> : null}
+                      {r.status === 'draft' ? <Badge tone="sun">ч</Badge> : r.status === 'filled' ? <span className="h-2 w-2 rounded-full bg-mint" /> : r.status === 'none' && <Circle className="h-3 w-3 text-muted" />}
                     </button>
                   ))}
                 </div>
@@ -210,13 +199,15 @@ export default function CalendarPage() {
 
       {view === 'day' && <Card><DayPanel d={cursor} /></Card>}
 
-      {filtered.observations.length === 0 && lessons.length === 0 && view !== 'day' && (
+      {filtered.observations.length === 0 && sched.every((d) => d.lessons.length === 0) && view !== 'day' && (
         <Card className="mt-4"><EmptyState icon={<CalendarDays className="h-7 w-7" />} title="У цьому періоді записів немає" text="Оберіть день і додайте урок або спостереження." /></Card>
       )}
 
       <LessonModal open={lessonModal.open} lesson={lessonModal.lesson} date={lessonModal.date}
         nextNumber={Math.max(0, ...lessons.filter((l) => l.date === lessonModal.date).map((l) => l.number)) + 1}
         onClose={() => setLessonModal((s) => ({ ...s, open: false }))} />
+      <LessonActions lesson={active?.lesson ?? null} day={active?.day ?? null} onClose={() => setActive(null)} />
+      <DayEditor day={editDay ? dayOf(editDay) : null} onClose={() => setEditDay(null)} onOpenLesson={(l) => { setEditDay(null); setActive({ lesson: l, day: dayOf(l.date) }); }} />
     </div>
   );
 }

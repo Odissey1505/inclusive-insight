@@ -142,6 +142,53 @@ describe('Row Level Security (two accounts)', () => {
     expect((await as(A, 'select 1 from ii_observation_tasks where id = $1', [id(4)])).rows).toHaveLength(0);
   });
 
+  /* ---------------- 1.2 Smart Schedule ---------------- */
+
+  it('schedule tables: owner-only access and parent ownership checks', async () => {
+    // A: period + template lesson + exception for A's student
+    await as(A, `insert into ii_schedule_periods (id, user_id, student_id, start_date, end_date, data) values ($1, $2, $3, '2026-09-01', '2026-12-31', '{"name":"І семестр"}')`, [id(40), A, id(1)]);
+    await as(A, `insert into ii_schedule_templates (id, user_id, student_id, period_id, weekday, lesson_number, subject_id, start_time, end_time, data) values ($1, $2, $3, $4, 1, 1, $5, '08:30', '09:05', '{}')`, [id(41), A, id(1), id(40), id(2)]);
+    await as(A, `insert into ii_schedule_overrides (id, user_id, student_id, period_id, date, override_type, template_id, data) values ($1, $2, $3, $4, '2026-11-16', 'slot', $5, '{"cancelled":true}')`, [id(42), A, id(1), id(40), id(41)]);
+    // B sees, changes and deletes nothing
+    for (const t of ['ii_schedule_periods', 'ii_schedule_templates', 'ii_schedule_overrides']) {
+      expect((await as(B, `select id from ${t}`)).rows, t).toHaveLength(0);
+      expect((await as(B, `update ${t} set data = '{}' where id in ($1, $2, $3)`, [id(40), id(41), id(42)])).affectedRows ?? 0, t).toBe(0);
+      expect((await as(B, `delete from ${t} where id in ($1, $2, $3)`, [id(40), id(41), id(42)])).affectedRows ?? 0, t).toBe(0);
+    }
+    expect((await as(A, 'select count(*)::int n from ii_schedule_overrides')).rows[0].n).toBe(1);
+    // B cannot create a schedule for A's student or attach lessons/exceptions to A's schedule
+    expect(await denied(B, `insert into ii_schedule_periods (id, user_id, student_id, start_date, end_date, data) values ($1, $2, $3, '2026-09-01', '2026-12-31', '{}')`, [id(43), B, id(1)])).toBe(true);
+    expect(await denied(B, `insert into ii_schedule_templates (id, user_id, student_id, period_id, weekday, lesson_number, data) values ($1, $2, $3, $4, 2, 1, '{}')`, [id(44), B, id(11), id(40)])).toBe(true);
+    await as(B, `insert into ii_schedule_periods (id, user_id, student_id, start_date, end_date, data) values ($1, $2, $3, '2026-09-01', '2026-12-31', '{}')`, [id(45), B, id(11)]);
+    expect(await denied(B, `insert into ii_schedule_overrides (id, user_id, student_id, period_id, date, override_type, template_id, data) values ($1, $2, $3, $4, '2026-11-16', 'slot', $5, '{}')`, [id(46), B, id(11), id(45), id(41)])).toBe(true);
+    expect(await denied(B, `insert into ii_schedule_templates (id, user_id, student_id, period_id, weekday, lesson_number, subject_id, data) values ($1, $2, $3, $4, 1, 1, $5, '{}')`, [id(47), B, id(11), id(45), id(2)])).toBe(true); // A's subject
+  });
+
+  it('schedule constraints: overlapping periods, time order, one exception per lesson and date', async () => {
+    const err = async (sql: string, params: unknown[]) => as(A, sql, params).then(() => 'ok', (e) => (e as { code?: string }).code ?? (e as Error).message);
+    // overlapping active schedule of the same student is refused…
+    expect(await err(`insert into ii_schedule_periods (id, user_id, student_id, start_date, end_date, data) values ($1, $2, $3, '2026-12-15', '2027-05-31', '{}')`, [id(50), A, id(1)])).toBe('23P01');
+    // …an archived one or a non-overlapping one is fine
+    expect(await err(`insert into ii_schedule_periods (id, user_id, student_id, start_date, end_date, archived, data) values ($1, $2, $3, '2026-12-15', '2027-05-31', true, '{}')`, [id(51), A, id(1)])).toBe('ok');
+    expect(await err(`insert into ii_schedule_periods (id, user_id, student_id, start_date, end_date, data) values ($1, $2, $3, '2027-01-12', '2027-05-31', '{}')`, [id(52), A, id(1)])).toBe('ok');
+    expect(await err(`insert into ii_schedule_periods (id, user_id, student_id, start_date, end_date, data) values ($1, $2, $3, '2027-08-01', '2027-07-01', '{}')`, [id(53), A, id(1)])).toBe('23514');
+    // lesson must end after it starts
+    expect(await err(`insert into ii_schedule_templates (id, user_id, student_id, period_id, weekday, lesson_number, start_time, end_time, data) values ($1, $2, $3, $4, 2, 1, '10:00', '09:00', '{}')`, [id(54), A, id(1), id(40)])).toBe('23514');
+    expect(await err(`insert into ii_schedule_templates (id, user_id, student_id, period_id, weekday, lesson_number, data) values ($1, $2, $3, $4, 8, 1, '{}')`, [id(55), A, id(1), id(40)])).toBe('23514');
+    // a second exception for the same lesson and date (different id) is refused
+    expect(await err(`insert into ii_schedule_overrides (id, user_id, student_id, period_id, date, override_type, template_id, data) values ($1, $2, $3, $4, '2026-11-16', 'slot', $5, '{}')`, [id(56), A, id(1), id(40), id(41)])).toBe('23505');
+    expect(await err(`insert into ii_schedule_overrides (id, user_id, student_id, period_id, date, override_type, data) values ($1, $2, $3, $4, '2026-11-17', 'day', '{"dayOff":"holiday"}')`, [id(57), A, id(1), id(40)])).toBe('ok');
+    expect(await err(`insert into ii_schedule_overrides (id, user_id, student_id, period_id, date, override_type, data) values ($1, $2, $3, $4, '2026-11-17', 'day', '{}')`, [id(58), A, id(1), id(40)])).toBe('23505');
+  });
+
+  it('deleting a schedule removes its template and exceptions but never observations', async () => {
+    await as(A, `insert into ii_observations (id, user_id, student_id, date, data) values ($1, $2, $3, '2026-11-16', '{}')`, [id(60), A, id(1)]);
+    await as(A, 'delete from ii_schedule_periods where id = $1', [id(40)]);
+    expect((await as(A, 'select count(*)::int n from ii_schedule_templates where period_id = $1', [id(40)])).rows[0].n).toBe(0);
+    expect((await as(A, 'select count(*)::int n from ii_schedule_overrides where period_id = $1', [id(40)])).rows[0].n).toBe(0);
+    expect((await as(A, 'select count(*)::int n from ii_observations where id = $1', [id(60)])).rows[0].n).toBe(1);
+  });
+
   it('the ownership helper refuses non-whitelisted tables', async () => {
     await expect(as(A, `select public.ii_is_foreign('pg_authid', $1)`, [id(1)])).rejects.toThrow();
   });

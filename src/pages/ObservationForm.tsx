@@ -14,7 +14,10 @@ import {
 import { Badge, Button, Card, ChipGroup, IconButton, Input, PageSkeleton, SaveIndicator, Segmented, Select, Textarea } from '../components/ui';
 import { useCloudSaveFeedback } from '../components/cloud';
 import { useSyncStatus } from '../hooks/useSync';
-import { CloudOff } from 'lucide-react';
+import { CloudOff, CalendarClock } from 'lucide-react';
+import { lessonHref } from '../components/schedule';
+import { scheduleRepo } from '../schedule/scheduleRepo';
+import { nextLesson, resolveDay } from '../schedule/scheduleEngine';
 import { useConfirm, useToast } from '../components/ui/feedback';
 import { cn, debounce, fmtDate, todayISO } from '../lib/utils';
 import type { ObservationMode } from '../types/models';
@@ -56,7 +59,7 @@ export default function ObservationForm() {
 
   /* ---------- initial load ---------- */
   useEffect(() => {
-    const key = `${draftKey}|${params.get('lesson') ?? ''}|${params.get('date') ?? ''}`;
+    const key = `${draftKey}|${params.get('lesson') ?? ''}|${params.get('date') ?? ''}|${params.get('key') ?? ''}|${params.get('number') ?? ''}`;
     if (loadedFor.current === key) return;
     loadedFor.current = key;
     (async () => {
@@ -75,6 +78,24 @@ export default function ObservationForm() {
         if (lessonId) {
           const l = await db.lessons.get(lessonId);
           if (l) Object.assign(initial, { lessonId: l.id, date: l.date, lessonNumber: l.number, subjectId: l.subjectId, topic: l.topic });
+        }
+        // Smart Schedule prefill: date, student, subject, lesson number and time. The topic stays for manual input.
+        const num = params.get('number');
+        if (num !== null && num !== '' && !Number.isNaN(Number(num))) initial.lessonNumber = Number(num);
+        if (params.get('start')) initial.startTime = params.get('start');
+        if (params.get('end')) initial.endTime = params.get('end');
+        if (params.get('key')) {
+          initial.scheduleKey = params.get('key');
+          initial.periodId = params.get('period');
+        }
+        // One main record per lesson: open the existing observation instead of creating a second one.
+        if (!params.get('another') && (initial.scheduleKey || initial.lessonNumber !== null)) {
+          const sameDay = await db.observations.where('[studentId+date]').equals([initial.studentId, initial.date]).toArray();
+          const existing = sameDay.find((o) => (initial!.scheduleKey && o.scheduleKey === initial!.scheduleKey) || (initial!.lessonNumber !== null && o.lessonNumber === initial!.lessonNumber));
+          if (existing) {
+            toast('Для цього уроку вже є спостереження — відкрито наявний запис');
+            return nav(`/observation/${existing.id}/edit`, { replace: true });
+          }
         }
         if (initial.mode === 'quick' && !initial.events.length) initial.events = [{ type: 'learning', tags: [], description: '', time: '' }];
       }
@@ -138,6 +159,16 @@ export default function ObservationForm() {
     if (!form) return;
     const err = validate(form);
     if (err) return toast(err, 'error');
+    if (form.startTime && form.endTime && form.endTime <= form.startTime) return toast('Кінець уроку має бути пізніше за початок', 'error');
+    if (!isEdit && !params.get('another') && form.lessonNumber !== null) {
+      const sameDay = await db.observations.where('[studentId+date]').equals([form.studentId, form.date]).toArray();
+      const dup = sameDay.find((o) => o.lessonNumber === form.lessonNumber);
+      if (dup && !(await confirm({
+        title: `Для уроку №${form.lessonNumber} уже є спостереження`,
+        text: 'Зазвичай на один урок ведеться один основний запис (усередині нього можна додати кілька завдань і подій). Створити ще один окремий запис?',
+        confirmLabel: 'Створити ще один',
+      }))) return;
+    }
     setBusy(true);
     setSaveState('saving');
     autosave.cancel();
@@ -147,6 +178,15 @@ export default function ObservationForm() {
       setSaveState('saved');
       saveFeedback(status === 'draft' ? 'Чернетку збережено' : 'Спостереження збережено');
       if (next === 'next') {
+        // Smart Schedule first: the next scheduled lesson of the day without an observation.
+        const sd = await scheduleRepo.loadData(form.studentId, form.date, form.date);
+        const following = nextLesson(resolveDay(form.date, form.studentId, sd), saved.scheduleKey ?? null, saved.lessonNumber ?? null);
+        if (following) {
+          setBaseline(JSON.stringify(form));
+          nav(`${lessonHref(following)}&mode=${form.mode}`);
+          setBusy(false);
+          return;
+        }
         const dayLessons = await db.lessons.where('[studentId+date]').equals([form.studentId, form.date]).sortBy('number');
         const curNum = saved.lessonNumber ?? 0;
         const nl = dayLessons.find((l) => l.number > curNum && l.id !== saved.lessonId);
@@ -246,15 +286,20 @@ export default function ObservationForm() {
         {/* General */}
         <Section title="Загальна інформація">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Input label="Дата" type="date" value={form.date} max="2100-12-31" onChange={(e) => update({ date: e.target.value, lessonId: undefined })} required />
-            {!quick && <Input label="№ уроку" type="number" min={1} max={12} inputMode="numeric" value={form.lessonNumber ?? ''} onChange={(e) => update({ lessonNumber: e.target.value ? Number(e.target.value) : null })} />}
+            <Input label="Дата" type="date" value={form.date} max="2100-12-31" onChange={(e) => update({ date: e.target.value, lessonId: undefined, scheduleKey: null, periodId: null })} required />
+            {!quick && <Input label="№ уроку" type="number" min={1} max={12} inputMode="numeric" value={form.lessonNumber ?? ''} onChange={(e) => update({ lessonNumber: e.target.value ? Number(e.target.value) : null, scheduleKey: null })} />}
             <Select label="Предмет" className={quick ? 'col-span-1 sm:col-span-3' : 'col-span-2'} value={form.subjectId} onChange={(e) => update({ subjectId: e.target.value, subjectFields: {} })} required>
               {!form.subjectId && <option value="">Оберіть…</option>}
               {[...visibleSubjects, ...(subject && subject.hidden ? [subject] : [])].map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </Select>
             {!quick && <Input label="Тема" className="col-span-2 sm:col-span-3" value={form.topic} onChange={(e) => update({ topic: e.target.value })} placeholder="Тема уроку" />}
+ {!quick && <Input label="Початок" type="time" value={form.startTime ?? ''} onChange={(e) => update({ startTime: e.target.value || null })} />}
+            {!quick && <Input label="Кінець" type="time" value={form.endTime ?? ''} onChange={(e) => update({ endTime: e.target.value || null })} />}
             {detailed && <Input label="Тривалість, хв" type="number" min={1} max={240} inputMode="numeric" value={form.duration ?? ''} onChange={(e) => update({ duration: e.target.value ? Number(e.target.value) : null })} />}
           </div>
+          {form.scheduleKey && (
+            <p className="mt-2 flex items-center gap-1.5 text-xs text-muted"><CalendarClock className="h-3.5 w-3.5" />Урок із розкладу. Предмет, номер і час збережуться в записі такими, як зараз, навіть якщо розклад згодом зміниться.</p>
+          )}
         </Section>
 
         {quick && (

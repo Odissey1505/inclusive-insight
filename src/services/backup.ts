@@ -4,7 +4,7 @@ import type { ID } from '../types/models';
 
 export const BACKUP_APP = 'inclusive-insight';
 export const BACKUP_FORMAT = 1;
-export const APP_VERSION = '1.1.0';
+export const APP_VERSION = '1.2.0';
 
 export interface BackupFile {
   app: typeof BACKUP_APP;
