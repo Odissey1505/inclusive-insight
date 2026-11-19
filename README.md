@@ -1,4 +1,4 @@
-# Inclusive Insight 1.1
+# Inclusive Insight 1.2
 
 *Your Inclusive Education Companion*
 
@@ -11,7 +11,7 @@ React + TypeScript SPA/PWA на GitHub Pages. З версії **1.1** дані �
 | **Хмарний (1.1)** | задано `VITE_SUPABASE_URL` і `VITE_SUPABASE_PUBLISHABLE_KEY` | Supabase Auth: email + пароль | Supabase (RLS) + локальна копія на пристрої |
 | **Локальний (1.0)** | змінні не задано | ім'я (локальний робочий простір, не захист) | лише в цьому браузері |
 
-📘 **Налаштування Supabase і GitHub Pages:** [docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md) · **Що змінилося в 1.1, перенесення записів 1.0, перевірки:** [docs/CHANGELOG_1.1.md](docs/CHANGELOG_1.1.md)
+📘 **Налаштування Supabase і GitHub Pages:** [docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md) · **1.2 Smart Schedule:** [docs/CHANGELOG_1.2.md](docs/CHANGELOG_1.2.md) · **1.1 хмара та синхронізація:** [docs/CHANGELOG_1.1.md](docs/CHANGELOG_1.1.md)
 
 > **Важливо.** Використовуйте псевдоніми учнів. У локальному режимі вхід за іменем — це лише перемикач робочих просторів, а не захищена автентифікація.
 
@@ -22,6 +22,7 @@ React + TypeScript SPA/PWA на GitHub Pages. З версії **1.1** дані �
 | Розділ | Що вміє |
 |---|---|
 | **Вхід** | Локальні профілі за іменем, вибір/створення профілю, запам'ятовування останнього, попередження про відсутність справжньої авторизації |
+| **Розклад (1.2)** | Сталий тижневий розклад на період (семестр): майстер створення, кілька розкладів, автоматичний вибір за датою, зміни лише на один день (заміна, скасування, додатковий урок, час, день без занять, скорочені уроки), зміна основного розкладу з дати набрання чинності без переписування історії, «на основі попереднього». Уроки автоматично з'являються на головній, у журналі й календарі |
 | **Головна** | Привітання, дата, обраний учень, KPI з реальних даних (уроки, заповнені, залученість, завершення, самостійність, досягнення), графіки, сьогоднішні уроки, швидкі дії |
 | **Журнал** | Пошук, фільтри (предмет, статус, поведінка, дати), сортування, групування за датами, перегляд, редагування, дублювання, видалення з підтвердженням |
 | **Нове спостереження** | Режими «Швидкий / Стандартний / Детальний» без втрати введеного; кілька завдань на урок (запропоновано/виконано/одиниця/підтримка/результат); поведінка, залученість, початок завдання, увага, комунікація, мотивація, взаємодія, контекст ситуації, нотатки, предметні шаблони, стратегії; автозбереження чернетки з індикатором «Зберігається / Збережено локально / Помилка збереження» |
@@ -102,6 +103,7 @@ src/
   components/charts        обгортки над Recharts
   components/layout        Sidebar (desktop), нижня навігація (mobile), PWA-оновлення
   pages/                   сторінки
+  schedule/                1.2: scheduleEngine.ts (єдина логіка розкладу), репозиторій, хуки
   cloud/                   1.1: Supabase client, auth, синхронізація, перенесення записів 1.0
   components/cloud         індикатор синхронізації, конфлікти, розділ «Хмара», майстер імпорту
   test/                    vitest + fake-indexeddb + PGlite (RLS)
@@ -112,9 +114,9 @@ UI звертається до даних лише через `db/repositories.t
 
 ### Таблиці IndexedDB
 
-`users, students, subjects, lessons, observations, tasks, events, strategies, strategyUses, iepGoals, iepMeasurements, achievements, templates, settings, drafts` + (1.1) `outbox, versions, conflicts`
+`users, students, subjects, lessons, observations, tasks, events, strategies, strategyUses, iepGoals, iepMeasurements, achievements, templates, settings, drafts` + (1.1) `outbox, versions, conflicts` + (1.2) `schedulePeriods, scheduleSlots, scheduleOverrides`
 
-Схема має версії (`version(1)`–`version(3)`) з міграціями; тест перевіряє оновлення наявної бази v1. Відповідні таблиці Supabase мають префікс `ii_` (див. `supabase/migrations`).
+Схема має версії (`version(1)`–`version(4)`) з міграціями; тест перевіряє оновлення наявної бази v1. Відповідні таблиці Supabase мають префікс `ii_` (див. `supabase/migrations`).
 
 ---
 
